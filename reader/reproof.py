@@ -109,7 +109,7 @@ class Reproofreader:
         settings = self.store.settings()
         from reader.providers import text_only
         if text_only(settings):
-            raise ValueError('Azure 模式／微软免配置模式不提供大模型校对；切换到大模型模式后可进行校对')
+            raise ValueError('Azure Translate不提供大模型校对；切换到大模型模式后可进行校对')
         fingerprint = profile(settings)
         if value.get('profile', fingerprint) != fingerprint:
             raise ValueError('模型配置已变化，请刷新后重新校对')

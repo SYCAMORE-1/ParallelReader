@@ -35,7 +35,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
       const request = route.request(), ep = new URL(request.url()).pathname;
       let value;
       if (ep === '/api/settings') {
-        if (request.method() === 'POST') { const data = request.postDataJSON(); settings = { ...settings, ...data, profile: data.translationProvider + '-profile', azureApiKey: '', hasAzureApiKey: !!data.azureApiKey }; value = { ok: true }; }
+        if (request.method() === 'POST') { const data = request.postDataJSON(); settings = { ...settings, ...data, profile: data.translationProvider + '-profile' }; value = { ok: true }; }
         else value = settings;
       } else if (ep === '/api/books') value = [{ ...book, pageCount: 1 }];
       else if (ep === '/api/books/' + book.id) value = book;
@@ -47,7 +47,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
       } else if (ep.endsWith('/window')) {
         const source = inventory();
         if (!source.selectionRequired && !saved[source.selectedProfile] && !saved[settings.profile]) {
-          generated++; saved[settings.profile] = { text: '微软新译文。', provider: settings.translationProvider, model: '微软免配置' };
+          generated++; saved[settings.profile] = { text: '微软新译文。', provider: settings.translationProvider, model: 'Azure Translate' };
         }
         value = { profile: settings.profile, needsTranslationChoice: source.selectionRequired };
       } else if (ep.endsWith('/status')) {
@@ -76,7 +76,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
     await page.locator('#translation-source-dialog').waitFor({ state: 'visible' });
     assert.equal(generated, 0, 'Must not translate before the user chooses');
     await page.locator('#use-saved-translation').click(); await ready('大模型原有译文。');
-    assert.equal(generated, 0); assert.match(await page.locator('#model-badge').innerText(), /免配置/);
+    assert.equal(generated, 0); assert.match(await page.locator('#model-badge').innerText(), /Azure Translate/);
     assert.match(await page.locator('#translation-source-button').innerText(), /LLM/);
     assert.equal(await page.locator('#book-exports').evaluate(el => !el.hidden), true, 'Complete saved versions can be exported');
     await page.reload(); await ready('大模型原有译文。');
@@ -86,10 +86,10 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
     await page.locator('#translate-with-current').click(); await ready('微软新译文。');
     assert.equal(generated, 1); assert.equal(saved['llm-profile'].text, '大模型原有译文。');
     await page.locator('#model-badge').click(); await page.locator('#settings-dialog').waitFor({ state: 'visible' });
-    await page.locator('#translation-provider').selectOption('azure');
-    await page.locator('[name=azureEndpoint]').fill('https://azure.example.invalid');
-    await page.locator('[name=azureApiKey]').fill('synthetic-test-key');
+    await page.locator('#translation-provider').selectOption('llm');
     await page.locator('#settings-form button[type=submit]').click();
+    await ready('大模型原有译文。');
+    await page.locator('#translation-source-button').click();
     await page.locator('#translation-source-dialog').waitFor({ state: 'visible' });
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.locator('#translation-source-dialog').evaluate(el => el.getBoundingClientRect().width <= innerWidth), true);
@@ -108,6 +108,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
     await page.mouse.dblclick(point.x, point.y);
     await page.waitForFunction(() => document.querySelector('#word-basic').textContent === '银行');
     assert.equal(await page.locator('#word-meaning').innerText(), '河岸'); assert.equal(words, 1);
+    assert.equal(await page.locator('#word-context').innerText(), '由 Azure Translate 提供');
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
     console.log('Saved-source switching, no duplicate translation, explicit new translation, persistence, export and keyless word lookup: PASS');
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

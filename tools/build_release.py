@@ -71,7 +71,7 @@ def build(destination, include_data=False, make_zip=False):
         shutil.copy2(ROOT / name, destination / name)
     font_path = destination / 'public' / 'fonts' / 'reader-sans.ttf'
     if not font_path.is_file():
-        sys.path.insert(0, str(ROOT / '.data' / 'font-build'))
+        sys.path.insert(0, str(ROOT / 'test-results' / 'font-build'))
         from fontTools.ttLib import TTFont
         font = TTFont(str(destination / 'public' / 'fonts' / 'reader-sans.woff2'), recalcTimestamp=False)
         font.flavor = None; font.save(font_path); font.close()
@@ -98,13 +98,10 @@ def build(destination, include_data=False, make_zip=False):
 .data 属于私人数据，不应加入代码仓库或公开发布包。复制前先关闭阅读器；也可用 tools/export_library.py 生成一致性快照。
 模型地址、模型名称和可选 API Key 由使用者在设置中填写，仅保存在本地 .data 中。默认没有任何模型接口地址。
 已保存译文可离线阅读；新增翻译、查词和校对需配置兼容的模型服务，程序包不包含模型权重。
-也可在设置的“翻译服务”中选择 Azure Translator，填写自己的 Endpoint、Key 和所需 Region，点击测试连接后保存。
-无需配置时，选择“微软翻译（免配置）”，无需 Azure 账号或 Key，临时会话仅在内存中自动管理。
-微软免配置模式同样只翻译文字、保留原图；网页服务变化或限流时可切换大模型或 Azure API。
-Azure 模式仅翻译文字，图片保留原图，不计入任务进度；校对、语境查词和图片翻译需切回大模型模式。
-两种服务的译文分别缓存。Azure 密钥只保存在 .data，私人书库导出工具会清空副本密钥；公开构建不携带配置。
-切换配置后若当前书籍已有其他本地译文，会先询问是否继续使用；已保存段落可直接复用，缺失部分才由当前服务补齐。
-“本地译文”按钮可切换阅读版本；单词翻译默认使用微软免配置词典与语境翻译，也可单独选择大模型语境解释。
+图书翻译在 LLM 与 Azure Translate 之间选择；Azure Translate 只翻译文字，图片保留原图。
+单词／语境翻译独立选择 LLM 或 Azure Translate，悬浮框显示提供方；查词 LLM 需单独填写接口和模型。
+译文分别缓存。切换配置后可继续使用本地已有译文，缺失部分由当前服务补齐；“本地译文”按钮可切换阅读版本。
+关闭阅读器后，tools/clean_library.py 可预览清理计划；添加 --apply --prune-history 可删除过期导出、未引用译图和旧校对快照并压缩数据库，原书和当前译文保留。
 字体、主题和阅读模式属于浏览器偏好，新电脑可重新调整；书签和阅读页数已随数据库迁移。
 
 ## 源码与许可

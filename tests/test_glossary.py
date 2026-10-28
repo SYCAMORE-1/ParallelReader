@@ -122,7 +122,7 @@ class GlossaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             store = Store(folder)
             tools = LanguageTools(store, request_fn=lambda *args: calls.append(args) or answer)
-            tools.explain(book, 0, 'rifles', store.settings() | {'wordProvider': 'llm', 'baseUrl': 'https://words.example.invalid/v1', 'model': 'test-words'})
+            tools.explain(book, 0, 'rifles', store.settings() | {'wordProvider': 'llm', 'wordBaseUrl': 'https://words.example.invalid/v1', 'wordModel': 'test-words'})
             payload = json.dumps(calls[0][3], ensure_ascii=False)
             self.assertNotIn('glossary', payload)
             self.assertNotIn('Heckler', payload)

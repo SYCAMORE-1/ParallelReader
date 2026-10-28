@@ -9,9 +9,26 @@ import zipfile
 from pathlib import Path
 
 
+def migrate_settings(value):
+    value = dict(value)
+    for key in ['azureEndpoint', 'azureApiKey', 'azureRegion', 'hasAzureApiKey', 'clearAzureApiKey']:
+        value.pop(key, None)
+    if value.get('translationProvider') == 'azure':
+        value['translationProvider'] = 'microsoft'
+    if value.get('wordProvider') == 'azure':
+        value['wordProvider'] = 'microsoft'
+    # Preserve a legacy inherited lookup model once, then keep it independent.
+    if value.get('wordProvider') == 'llm' and not value.get('wordBaseUrl') and not value.get('wordModel'):
+        if value.get('baseUrl') and value.get('model'):
+            value.update(wordBaseUrl=value['baseUrl'], wordModel=value['model'], wordApiKey=value.get('apiKey', ''))
+    return value
+
+
 class Store:
     def __init__(self, directory):
         self.directory = Path(directory)
+        if (self.directory / 'maintenance.lock').exists():
+            raise RuntimeError('书库正在整理，请稍后再启动阅读器')
         self.directory.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.db = sqlite3.connect(self.directory / "reader.sqlite3", check_same_thread=False)
@@ -192,15 +209,20 @@ class Store:
     def settings(self):
         with self.lock:
             row = self.db.execute("SELECT value FROM settings WHERE key='model'").fetchone()
+            saved = json.loads(row[0]) if row else {}
+            migrated = migrate_settings(saved)
+            if saved != migrated:
+                with self.db:
+                    self.db.execute("UPDATE settings SET value=? WHERE key='model'", (json.dumps(migrated, ensure_ascii=False),))
         defaults = {"baseUrl": "", "model": "", "apiKey": "", "targetLanguage": "简体中文",
                     "reviewEnabled": True, "reviewBaseUrl": "", "reviewModel": "", "reviewApiKey": "",
                     "wordBaseUrl": "", "wordModel": "", "wordApiKey": "",
-                    "translationProvider": "llm", "azureEndpoint": "", "azureApiKey": "", "azureRegion": "", "wordProvider": "microsoft"}
-        return defaults | (json.loads(row[0]) if row else {})
+                    "translationProvider": "llm", "wordProvider": "microsoft"}
+        return defaults | migrated
 
     def save_settings(self, value):
         with self.lock, self.db:
-            self.db.execute("INSERT OR REPLACE INTO settings VALUES ('model',?)", (json.dumps(value, ensure_ascii=False),))
+            self.db.execute("INSERT OR REPLACE INTO settings VALUES ('model',?)", (json.dumps(migrate_settings(value), ensure_ascii=False),))
         self.register_translation_profiles(self.settings())
 
     def register_translation_profiles(self, settings):

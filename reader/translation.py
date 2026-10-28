@@ -17,7 +17,7 @@ from reader.terminology import TERMINOLOGY_VERSION, OPERATOR_SENSES, terminology
 from reader.repetition import REPETITION_NOTE, repetition_shots
 from reader.glossary import GLOSSARY_NOTE, glossary_reference, glossary_usage
 from reader.scene_phrases import SCENE_NOTE
-from reader.providers import uses_azure, review_enabled, service_name
+from reader.providers import review_enabled, service_name
 
 PROMPT_VERSION = "context-v8-chinese-title-few-shot"
 REVIEW_VERSION = "proofread-v1-source-slots"
@@ -122,10 +122,6 @@ def profile(settings):
     if settings.get('translationProvider') == 'microsoft':
         from reader.microsoft_translation import VERSION
         return hashlib.sha256((VERSION + settings['targetLanguage']).encode()).hexdigest()[:20]
-    if uses_azure(settings):
-        from reader.azure_translation import VERSION
-        identity = {k: settings.get(k, '') for k in ('azureEndpoint', 'azureRegion', 'targetLanguage')}
-        return hashlib.sha256((VERSION + json.dumps(identity, sort_keys=True)).encode()).hexdigest()[:20]
     identity = {k: settings[k] for k in ("baseUrl", "model", "targetLanguage")}
     if settings.get('reviewEnabled'):
         identity['proofreading'] = {k: settings[k] for k in ('reviewBaseUrl', 'reviewModel')}
@@ -509,9 +505,6 @@ def translate(book, pid, settings, store=None):
     if settings.get('translationProvider') == 'microsoft':
         from reader.microsoft_translation import translate as microsoft_translate
         return microsoft_translate(book, pid, settings, store)
-    if uses_azure(settings):
-        from reader.azure_translation import translate as azure_translate
-        return azure_translate(book, pid, settings, store)
     if not settings.get('reviewEnabled'):
         return translate_draft(book, pid, settings, store)
     source = book['paragraphs'][pid]['text']

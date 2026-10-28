@@ -16,7 +16,7 @@ from reader.storage import Store
 from reader.language import LanguageTools
 from reader.image_translation import ImageTranslator
 from reader.translation import Translator, draft_settings, profile, request_json
-from reader.providers import uses_azure, review_enabled
+from reader.providers import review_enabled
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_SAMPLE = ROOT / '.data' / 'sample.epub'
@@ -24,7 +24,7 @@ DEFAULT_SAMPLE = ROOT / '.data' / 'sample.epub'
 
 def validate_settings(value, previous):
     provider = value.get('translationProvider', previous.get('translationProvider', 'llm'))
-    if provider not in {'llm', 'azure', 'microsoft'}:
+    if provider not in {'llm', 'microsoft'}:
         raise ValueError('请选择支持的翻译服务')
     word_provider = value.get('wordProvider', previous.get('wordProvider', 'microsoft'))
     if word_provider not in {'microsoft', 'llm'}:
@@ -53,20 +53,12 @@ def validate_settings(value, previous):
     word_model = str(value.get('wordModel', previous.get('wordModel', ''))).strip()
     word_url = urlparse(word_base)
     if bool(word_base) != bool(word_model) or len(word_model) > 200:
-        raise ValueError('查词接口地址和模型名称需要同时填写；同时留空则使用翻译模型')
+        raise ValueError('查词接口地址和模型名称需要同时填写')
+    if word_provider == 'llm' and (not word_base or not word_model):
+        raise ValueError('请单独填写查词 LLM 的接口地址和模型名称')
     if word_base and (word_url.scheme not in ('http', 'https') or not word_url.hostname or word_url.username or word_url.password or word_url.query or word_url.fragment):
         raise ValueError('请输入有效的查词模型 HTTP(S) 地址')
-    azure_endpoint = str(value.get('azureEndpoint', previous.get('azureEndpoint', ''))).strip().rstrip('/')
-    azure_key = '' if value.get('clearAzureApiKey') else (str(value.get('azureApiKey', '')).strip() or previous.get('azureApiKey', ''))
-    azure_region = str(value.get('azureRegion', previous.get('azureRegion', ''))).strip()
-    if provider == 'azure' or azure_endpoint:
-        from reader.azure_translation import endpoint_url
-        endpoint_url(azure_endpoint, 'zh-Hans')
-    if provider == 'azure' and not azure_key:
-        raise ValueError('请填写 Azure Translator Key')
-    if len(azure_region) > 80 or any(not (c.isascii() and (c.isalnum() or c == '-')) for c in azure_region):
-        raise ValueError('请输入有效的 Azure Region，全球资源可留空')
-    return {"translationProvider": provider, 'wordProvider': word_provider, "azureEndpoint": azure_endpoint, "azureApiKey": azure_key, "azureRegion": azure_region,
+    return {"translationProvider": provider, 'wordProvider': word_provider,
             "baseUrl": base, "model": model, "targetLanguage": language, "apiKey": "" if value.get("clearApiKey") else (str(value.get("apiKey", "")).strip() or previous.get("apiKey", "")),
             'reviewEnabled': review_enabled, 'reviewBaseUrl': review_base, 'reviewModel': review_model,
             'reviewApiKey': '' if value.get('clearReviewApiKey') else (str(value.get('reviewApiKey', '')).strip() or previous.get('reviewApiKey', '')),
@@ -160,7 +152,7 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                     return self.respond({**settings, "apiKey": "", "hasApiKey": bool(settings.get("apiKey")),
                                          'reviewApiKey': '', 'hasReviewApiKey': bool(settings.get('reviewApiKey')),
                                          'wordApiKey': '', 'hasWordApiKey': bool(settings.get('wordApiKey')),
-                                         'azureApiKey': '', 'hasAzureApiKey': bool(settings.get('azureApiKey')), "profile": profile(settings)})
+                                         "profile": profile(settings)})
                 if parts[:2] == ['api', 'books'] and len(parts) == 5 and parts[3] == 'image-translations':
                     return self.respond(image_translator.status(store.book(parts[2]), parts[4]))
                 if parts[:2] == ['api', 'books'] and len(parts) == 5 and parts[3] == 'translated-images':
@@ -297,10 +289,6 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                         from reader.microsoft_translation import CLIENT
                         CLIENT.translate(settings, ['<p>Hello.</p>'])
                         return self.respond({'ok': True, 'provider': 'microsoft'})
-                    if uses_azure(settings):
-                        from reader.azure_translation import request_translations
-                        request_translations(settings, ['<p>Hello.</p>'], timeout=15)
-                        return self.respond({'ok': True, 'provider': 'azure'})
                     result = request_json(settings["baseUrl"] + "/models", api_key=settings["apiKey"], timeout=12)
                     models = [m["id"] for m in result.get("data", [])]
                     if settings["model"] not in models:

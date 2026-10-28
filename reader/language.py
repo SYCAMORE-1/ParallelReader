@@ -18,10 +18,10 @@ from reader.scene_phrases import SCENE_VERSION, SCENE_WORD
 VERSION = "reading-tools-v2"
 WORD = re.compile(r"[A-Za-z]+(?:[’'\-][A-Za-z]+)*")
 def word_settings(settings):
-    separate = bool(settings.get('wordBaseUrl') and settings.get('wordModel'))
-    return {**settings, 'baseUrl': settings['wordBaseUrl'] if separate else settings['baseUrl'],
-            'model': settings['wordModel'] if separate else settings['model'],
-            'apiKey': settings.get('wordApiKey', '') if separate else settings.get('apiKey', ''), 'reviewEnabled': False, 'translationProvider': 'llm'}
+    if not settings.get('wordBaseUrl') or not settings.get('wordModel'):
+        raise ValueError('请单独配置查词 LLM 的接口地址和模型名称')
+    return {**settings, 'baseUrl': settings['wordBaseUrl'], 'model': settings['wordModel'],
+            'apiKey': settings.get('wordApiKey', ''), 'reviewEnabled': False, 'translationProvider': 'llm'}
 PARTS_OF_SPEECH = ['n.', 'v.', 'adj.', 'adv.', 'pron.', 'prep.', 'conj.', 'det.', 'art.', 'aux.', 'modal v.', 'interj.', 'num.', 'abbr.', 'prop. n.', 'phr.']
 
 
@@ -108,7 +108,7 @@ class LanguageTools:
             return view
         from reader.providers import text_only
         if text_only(settings):
-            raise ValueError('Azure 模式／微软免配置模式不调用大模型定位，请重新翻译该段以恢复句子对应')
+            raise ValueError('Azure Translate不调用大模型定位，请重新翻译该段以恢复句子对应')
         source, target = view['sourceSentences'], view['targetSentences']
         group_schema = {'type': 'object', 'properties': {side: {'type': 'array', 'minItems': 1, 'maxItems': count, 'items': {'type': 'integer', 'minimum': 0, 'maximum': count - 1}} for side, count in [('source', len(source)), ('target', len(target))]}, 'required': ['source', 'target'], 'additionalProperties': False}
         schema = {'type': 'object', 'properties': {'groups': {'type': 'array', 'minItems': 2, 'items': group_schema}}, 'required': ['groups'], 'additionalProperties': False}
@@ -152,7 +152,7 @@ class LanguageTools:
         # Explicit LLM lookup remains independent of the paragraph provider.
         settings = word_settings(settings)
         if not settings.get('baseUrl') or not settings.get('model'):
-            raise ValueError('请配置查词模型，或改用微软免配置查词')
+            raise ValueError('请配置查词模型，或改用Azure Translate')
         window = sentence_window(book, pid, offset, radius=10, following_radius=0)
         context = {name: window[name] for name in ['sentence', 'previousSentences']}
         term_note = terminology_note(word, settings['targetLanguage'])
@@ -198,4 +198,4 @@ class LanguageTools:
         if term_note and SCENE_WORD.fullmatch(word):
             kind += ':' + SCENE_VERSION
         result = self.cached_call(self.key(kind, book, pid, settings, {'word': word.casefold(), 'offset': offset}), compute)
-        return {'word': word, **result, 'meaning': result['contextMeaning'], 'model': settings['model'], 'contextWindow': {'before': len(context['previousSentences']), 'after': 0}}
+        return {'word': word, **result, 'provider': 'llm', 'meaning': result['contextMeaning'], 'model': settings['model'], 'contextWindow': {'before': len(context['previousSentences']), 'after': 0}}

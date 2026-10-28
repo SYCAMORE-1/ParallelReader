@@ -56,8 +56,11 @@ class LibraryRemovalTests(unittest.TestCase):
             self.assertTrue(started.wait(2))
             worker.window(self.book, 5)
             other = self.store.add(queue_book() | {'id': 'other'})
-            worker.bulk_action(other, 'start')
-            worker.remove_book(self.book['id'])
+            # Keep the foreground request queued until removal; starting another
+            # book may otherwise create a worker that legitimately takes it first.
+            with worker.condition:
+                worker.bulk_action(other, 'start')
+                worker.remove_book(self.book['id'])
             self.assertFalse(any(key[0] == self.book['id'] for key in worker.desired))
             with self.assertRaises(KeyError):
                 worker.window(self.book, 1)

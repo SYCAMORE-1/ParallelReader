@@ -111,10 +111,10 @@
   <dialog id="translation-source-dialog" aria-labelledby="translation-source-title"><div class="dialog-heading"><h2 id="translation-source-title">本地已有译文</h2></div><p id="translation-source-description"></p><label>阅读译文<select id="translation-source-select"></select></label><div class="dialog-actions"><button id="translate-with-current" class="secondary" type="button">使用当前翻译配置</button><button id="use-saved-translation" class="primary" type="button">使用已保存译文</button></div></dialog>
   <dialog id="settings-dialog"><form id="settings-form">
 <div class="dialog-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h2>翻译服务设置</h2></div><button type="button" class="icon-button close-dialog" aria-label="关闭设置"><svg><use href="#i-close"/></svg></button></div>
-<label>翻译服务<select name="translationProvider" id="translation-provider"><option value="llm">大模型（LLM）</option><option value="microsoft">微软翻译（免配置）</option><option value="azure">Azure Translator API（自备 Key）</option></select></label>
+<label>图书翻译<select name="translationProvider" id="translation-provider"><option value="llm">LLM</option><option value="microsoft">Azure Translate</option></select></label>
 <label>翻译语言<select name="targetLanguage"><option>简体中文</option><option>繁體中文</option><option>日本語</option></select></label>
-<label>单词翻译<select name="wordProvider" id="word-provider"><option value="microsoft">微软翻译（免配置，默认）</option><option value="llm">大模型语境解释</option></select></label>
-<div id="word-provider-settings" hidden><details class="review-settings"><summary>独立查词模型（可选）</summary><p>同时留空时使用已配置的翻译模型。查词只参考当前句和前面最多十句。</p>
+<label>单词 / 语境翻译<select name="wordProvider" id="word-provider"><option value="microsoft">Azure Translate</option><option value="llm">LLM</option></select></label>
+<div id="word-provider-settings" hidden><details class="review-settings" open><summary>查词 LLM 设置</summary><p>单词和语境解释共用此配置，独立于图书翻译。仅参考当前句和前面最多十句。</p>
 <label>查词 API 地址<input name="wordBaseUrl" type="url" placeholder="请输入查词接口地址"></label><label>查词模型名称<input name="wordModel" placeholder="请输入查词模型名称"></label>
 <label>查词 API Key <span class="optional">可选</span><input name="wordApiKey" type="password" autocomplete="off"></label>
 <label class="checkbox-label"><input name="clearWordApiKey" type="checkbox">清除已保存的查词 API Key</label></details></div>
@@ -131,17 +131,10 @@
 <label>校对 API Key <span class="optional">可选</span><input name="reviewApiKey" type="password" autocomplete="off"></label>
 <label class="checkbox-label"><input name="clearReviewApiKey" type="checkbox">清除已保存的校对 API Key</label></details>
 </div>
-<div id="azure-provider-settings" hidden>
-<p class="dialog-description">使用 Azure Translator Text API 翻译正文。自动识别原文语言，插图保留原图；单词翻译独立选择服务。</p>
-<label>Azure Endpoint<input name="azureEndpoint" type="url" placeholder="从 Azure 资源的 Keys and Endpoint 页面复制"><small>支持全局服务或自定义资源 Endpoint。</small></label>
-<label>Azure Translator Key<input name="azureApiKey" type="password" autocomplete="off"><small>只保存在本机 .data 中，不会返回到浏览器或进入公开发布包。</small></label>
-<label class="checkbox-label"><input name="clearAzureApiKey" type="checkbox">清除已保存的 Azure Key</label>
-<label>Azure Region <span class="optional">全局资源可选</span><input name="azureRegion" placeholder="区域资源请填写对应 Region"><small>区域资源／多服务资源需要填写；全局资源可留空。</small></label>
-</div>
-<div id="microsoft-provider-settings" hidden><p class="dialog-description">无需 Azure 账号、Key 或模型地址，联网即可使用微软网页翻译。临时会话自动获取，仅保存在内存中。图片保留原图；此模式不提供正文大模型校对，单词翻译可独立选择服务。网页服务可能调整或限流，失败时可切换其他服务。</p></div>
+<div id="microsoft-provider-settings" hidden><p class="dialog-description">使用 Azure Translate 翻译文字，图片保留原图。</p></div>
 <p id="connection-result" class="connection-result" role="status"></p><div class="dialog-actions"><button id="test-model" type="button" class="secondary">测试连接</button><button type="submit" class="primary">保存设置</button></div>
 </form></dialog>
-  <aside id="word-popover" class="word-popover" role="dialog" aria-modal="false" aria-labelledby="word-title" hidden><div class="word-popover-heading"><h2 id="word-title"></h2><button id="close-word" class="icon-button" aria-label="关闭单词解释"><svg><use href="#i-close"/></svg></button></div><div class="word-meta"><span id="word-lemma"></span><span id="word-pos" class="word-pos" hidden></span></div><p id="word-status" role="status"></p><div id="word-definitions" aria-live="polite" hidden><section class="word-definition"><h3>基本词义</h3><p id="word-basic"></p></section><section class="word-definition contextual-definition"><h3>文中含义</h3><p id="word-meaning"></p></section><p id="word-note"></p></div><button id="retry-word" class="secondary" hidden>重新查询</button><small id="word-context">仅参考当前句和之前最多 10 句</small></aside>
+  <aside id="word-popover" class="word-popover" role="dialog" aria-modal="false" aria-labelledby="word-title" hidden><div class="word-popover-heading"><h2 id="word-title"></h2><button id="close-word" class="icon-button" aria-label="关闭单词解释"><svg><use href="#i-close"/></svg></button></div><div class="word-meta"><span id="word-lemma"></span><span id="word-pos" class="word-pos" hidden></span></div><p id="word-status" role="status"></p><div id="word-definitions" aria-live="polite" hidden><section class="word-definition"><h3>基本词义</h3><p id="word-basic"></p></section><section class="word-definition contextual-definition"><h3>文中含义</h3><p id="word-meaning"></p></section><p id="word-note"></p></div><button id="retry-word" class="secondary" hidden>重新查询</button><small id="word-context">由 Azure Translate 提供</small></aside>
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="drop-overlay" class="drop-overlay" hidden><svg><use href="#i-upload"/></svg><h2>把故事放在这里</h2><p>松开鼠标，导入 EPUB</p></div>
 </body>

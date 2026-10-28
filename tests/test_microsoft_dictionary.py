@@ -30,7 +30,7 @@ class MicrosoftDictionaryTests(unittest.TestCase):
             return '<p>他沿河而行。</p><p id="pr-current">他坐在<b id="pr-word">河岸</b>上。</p>'
         with patch('reader.microsoft_dictionary.CLIENT.dictionary', return_value=dictionary) as lookup, patch('reader.microsoft_dictionary.CLIENT.one', side_effect=one), patch('reader.translation.request_json', side_effect=AssertionError('Must not use an LLM')):
             tools = LanguageTools(self.store)
-            for provider in ['llm', 'azure', 'microsoft']:
+            for provider in ['llm', 'microsoft']:
                 value = tools.explain(self.book, 3, 'bank', self.settings | {'translationProvider': provider}, self.offset)
                 self.assertEqual(value['basicMeaning'], '银行'); self.assertEqual(value['contextMeaning'], '河岸')
                 self.assertEqual(value['partOfSpeech'], 'n. / v.'); self.assertEqual(value['provider'], 'microsoft')

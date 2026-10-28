@@ -745,12 +745,9 @@ document.addEventListener('drop', event => { event.preventDefault(); dragDepth =
 async function showSettings() {
   try {
     const settings = await api('/api/settings'); state.settings = settings;
-    const form = $('#settings-form'); for (const key of ['baseUrl', 'model', 'targetLanguage', 'apiKey', 'reviewBaseUrl', 'reviewModel', 'reviewApiKey', 'wordBaseUrl', 'wordModel', 'wordApiKey', 'azureEndpoint', 'azureApiKey', 'azureRegion']) form.elements[key].value = settings[key] || '';
+    const form = $('#settings-form'); for (const key of ['baseUrl', 'model', 'targetLanguage', 'apiKey', 'reviewBaseUrl', 'reviewModel', 'reviewApiKey', 'wordBaseUrl', 'wordModel', 'wordApiKey']) form.elements[key].value = settings[key] || '';
     form.elements.translationProvider.value = settings.translationProvider || 'llm';
     form.elements.wordProvider.value = settings.wordProvider || 'microsoft';
-    form.dataset.hasAzureKey = String(!!settings.hasAzureApiKey);
-    form.elements.clearAzureApiKey.checked = false;
-    form.elements.azureApiKey.placeholder = settings.hasAzureApiKey ? '已保存，留空以保留' : '请输入 Azure Translator Key';
     form.elements.reviewEnabled.checked = !!settings.reviewEnabled;
     form.elements.clearReviewApiKey.checked = false; form.elements.clearWordApiKey.checked = false;
     form.elements.wordApiKey.placeholder = settings.hasWordApiKey ? '已保存，留空以保留' : '按服务要求填写';
@@ -762,16 +759,15 @@ async function showSettings() {
   } catch (error) { report(error); }
 }
 function syncModelRequirements() {
-  const form = $('#settings-form'), provider = form.elements.translationProvider.value, azure = provider === 'azure', llm = provider === 'llm';
+  const form = $('#settings-form'), provider = form.elements.translationProvider.value, llm = provider === 'llm';
   $('#microsoft-provider-settings').hidden = provider !== 'microsoft';
-  for (const [id, active] of [['llm-provider-settings', llm], ['azure-provider-settings', azure], ['word-provider-settings', form.elements.wordProvider.value === 'llm']]) {
+  for (const [id, active] of [['llm-provider-settings', llm], ['word-provider-settings', form.elements.wordProvider.value === 'llm']]) {
     const group = $('#' + id); group.hidden = !active;
     for (const control of group.querySelectorAll('input, select')) control.disabled = !active;
   }
   for (const key of ['baseUrl', 'model']) form.elements[key].required = llm;
   for (const key of ['reviewBaseUrl', 'reviewModel']) form.elements[key].required = llm && form.elements.reviewEnabled.checked;
-  form.elements.azureEndpoint.required = azure;
-  form.elements.azureApiKey.required = azure && form.dataset.hasAzureKey !== 'true';
+  for (const key of ['wordBaseUrl', 'wordModel']) form.elements[key].required = form.elements.wordProvider.value === 'llm';
   $('#test-model').title = !llm ? '发送一句简短测试文本以验证翻译服务' : '验证模型接口连接';
 }
 $('#settings-form').elements.reviewEnabled.addEventListener('change', syncModelRequirements);
@@ -780,10 +776,10 @@ $('#word-provider').addEventListener('change', syncModelRequirements);
 $('#model-badge').onclick = showSettings;
 for (const button of document.querySelectorAll('.close-dialog')) button.onclick = () => button.closest('dialog').close();
 for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('click', event => { const r = dialog.getBoundingClientRect(); if (event.target === dialog && (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom)) dialog.close(); });
-function formSettings() { const form = $('#settings-form'), data = Object.fromEntries(new FormData(form)); for (const key of ['clearApiKey', 'reviewEnabled', 'clearReviewApiKey', 'clearWordApiKey', 'clearAzureApiKey']) { if (!form.elements[key].disabled) data[key] = form.elements[key].checked; } return data; }
+function formSettings() { const form = $('#settings-form'), data = Object.fromEntries(new FormData(form)); for (const key of ['clearApiKey', 'reviewEnabled', 'clearReviewApiKey', 'clearWordApiKey']) { if (!form.elements[key].disabled) data[key] = form.elements[key].checked; } return data; }
 $('#test-model').onclick = async () => {
   const button = $('#test-model'), result = $('#connection-result'); button.disabled = true; result.classList.remove('error'); result.textContent = '正在连接翻译服务…';
-  try { const settings = formSettings(); await api('/api/model/test', settings); result.textContent = settings.translationProvider === 'microsoft' ? '连接成功，微软免配置翻译可用。' : settings.translationProvider === 'azure' ? '连接成功，Azure 文字翻译可用。' : settings.reviewEnabled ? '连接成功，初译和校对模型均可用。' : '连接成功，模型可用。'; }
+  try { const settings = formSettings(); await api('/api/model/test', settings); result.textContent = settings.translationProvider === 'microsoft' ? '连接成功，Azure Translate 可用。' : settings.reviewEnabled ? '连接成功，初译和校对模型均可用。' : '连接成功，模型可用。'; }
   catch (error) { result.classList.add('error'); result.textContent = error.message; }
   finally { button.disabled = false; }
 };
@@ -805,7 +801,7 @@ $('#settings-form').onsubmit = async event => {
 };
 function applySettings() {
   const provider = state.settings.translationProvider;
-  const name = {azure: 'Azure Translator', microsoft: '微软翻译（免配置）'}[provider];
+  const name = provider === 'microsoft' ? 'Azure Translate' : '';
   $('#model-badge span:last-child').textContent = name || (state.settings.model ? state.settings.model + (state.settings.reviewEnabled ? ' + 校对' : '') : '配置模型');
   $('#model-badge').title = name ? name + '：正文翻译，插图保留原图' : state.settings.reviewEnabled ? `${state.settings.model} 初译 → ${state.settings.reviewModel} 校对` : state.settings.model;
 }

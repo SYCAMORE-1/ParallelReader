@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from reader.azure_translation import LANGUAGES, translate_sentences
+from reader.machine_translation import LANGUAGES, translate_sentences
 
 VERSION = 'microsoft-web-html-slots-v1'
 PAGE = 'https://www.bing.com/translator'
@@ -26,7 +26,7 @@ def allowed_url(url):
 class Redirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, new_url):
         if not allowed_url(new_url):
-            raise RuntimeError('微软翻译返回了不支持的跳转地址')
+            raise RuntimeError('Azure Translate返回了不支持的跳转地址')
         if request.method == 'POST' and code in {301, 302, 303, 307, 308}:
             return urllib.request.Request(new_url, data=request.data, headers=dict(request.headers), method='POST')
         return super().redirect_request(request, response, code, message, headers, new_url)
@@ -34,12 +34,12 @@ class Redirects(urllib.request.HTTPRedirectHandler):
 
 def parse_session(page, url, now):
     if not allowed_url(url):
-        raise RuntimeError('微软翻译返回了不支持的页面地址')
+        raise RuntimeError('Azure Translate返回了不支持的页面地址')
     auth = re.search(r'params_AbusePreventionHelper\s*=\s*\[\s*(\d+)\s*,\s*"([^"\r\n]+)"\s*,\s*(\d+)\s*\]', page)
     ig = re.search(r'IG\s*:\s*"([A-Fa-f0-9]+)"', page)
     iid = re.search(r'data-iid\s*=\s*["\x27]([^"\x27]+)["\x27]', page)
     if not (auth and ig and iid):
-        raise RuntimeError('微软翻译暂不可用或需要网页验证，请稍后重试，或切换大模型／Azure API')
+        raise RuntimeError('Azure Translate暂不可用或需要网页验证，请稍后重试，或切换为 LLM')
     parsed = urllib.parse.urlsplit(url)
     return {'key': auth[1], 'token': auth[2], 'ig': ig[1], 'iid': html.unescape(iid[1]),
             'url': f'https://{parsed.hostname}/ttranslatev3',
@@ -104,16 +104,16 @@ class MicrosoftTranslator:
         try:
             with self.opener.open(request, timeout=20) as response:
                 if not allowed_url(response.url):
-                    raise RuntimeError('微软翻译返回了不支持的地址')
+                    raise RuntimeError('Azure Translate返回了不支持的地址')
                 body = response.read(3 * 1024 * 1024 + 1)
-                if len(body) > 3 * 1024 * 1024: raise RuntimeError('微软翻译响应过大，请重试')
+                if len(body) > 3 * 1024 * 1024: raise RuntimeError('Azure Translate响应过大，请重试')
                 return body.decode('utf-8'), response.url
         except urllib.error.HTTPError as exc:
             exc.close()
-            if exc.code == 429: raise RuntimeError('微软翻译请求过于频繁，请稍后重试') from exc
-            raise RuntimeError(f'微软翻译暂不可用（HTTP {exc.code}），请稍后重试或切换服务') from exc
+            if exc.code == 429: raise RuntimeError('Azure Translate请求过于频繁，请稍后重试') from exc
+            raise RuntimeError(f'Azure Translate暂不可用（HTTP {exc.code}），请稍后重试或切换服务') from exc
         except (urllib.error.URLError, OSError, UnicodeError) as exc:
-            raise RuntimeError('无法连接微软翻译，请检查网络或切换服务') from exc
+            raise RuntimeError('无法连接Azure Translate，请检查网络或切换服务') from exc
 
     def authentication(self):
         with self.lock:
@@ -125,7 +125,7 @@ class MicrosoftTranslator:
 
     def request(self, path, fields):
         if path not in {'/ttranslatev3', '/tlookupv3'}:
-            raise ValueError('不支持的微软翻译接口')
+            raise ValueError('不支持的Azure Translate接口')
         with self.slots:
             for attempt in range(2):
                 session = self.authentication()
@@ -135,14 +135,14 @@ class MicrosoftTranslator:
                     'Referer': PAGE, 'Content-Type': 'application/x-www-form-urlencoded'}, method='POST')
                 raw, _ = self.fetch(request)
                 try: value = json.loads(raw)
-                except ValueError as exc: raise RuntimeError('微软翻译返回了无效响应，请稍后重试') from exc
+                except ValueError as exc: raise RuntimeError('Azure Translate返回了无效响应，请稍后重试') from exc
                 code = value.get('statusCode') if isinstance(value, dict) else None
                 if code == 205 and attempt == 0:
                     with self.lock:
                         if self.session and self.session['token'] == session['token']: self.session = None
                     continue
                 if code is not None and code != 200:
-                    raise RuntimeError('微软翻译请求未成功，请稍后重试或切换服务')
+                    raise RuntimeError('Azure Translate请求未成功，请稍后重试或切换服务')
                 return value
 
     def one(self, text, language):
@@ -150,7 +150,7 @@ class MicrosoftTranslator:
         entries = value[0].get('translations') if isinstance(value, list) and value and isinstance(value[0], dict) else None
         target = next((entry.get('text') for entry in entries if isinstance(entry, dict) and entry.get('to') == language), None) if isinstance(entries, list) else None
         if not isinstance(target, str) or not target.strip():
-            raise RuntimeError('微软翻译没有返回有效译文，请重试')
+            raise RuntimeError('Azure Translate没有返回有效译文，请重试')
         return target
 
     def dictionary(self, word, language):

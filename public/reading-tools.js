@@ -354,9 +354,9 @@ export class ReadingTools {
     this.word = { pid, word, x, y, offset }; $('#word-popover').hidden = false;
     $('#word-title').textContent = word; $('#word-lemma').textContent = ''; $('#word-pos').hidden = true;
     $('#word-definitions').hidden = true; $('#word-status').hidden = false;
-    $('#word-status').textContent = this.state.settings.wordProvider === 'llm' ? '正在查询基本词义，并结合前文解释…' : '正在使用微软免配置查词…';
+    $('#word-status').textContent = '正在查询基本词义和语境含义…';
     $('#word-basic').textContent = ''; $('#word-meaning').textContent = ''; $('#word-note').textContent = ''; $('#retry-word').hidden = true;
-    $('#word-context').textContent = '仅参考当前句和之前最多 10 句';
+    $('#word-context').textContent = '由 ' + (this.state.settings.wordProvider === 'llm' ? 'LLM' : 'Azure Translate') + ' 提供';
     $('#word-popover').classList.remove('word-error'); this.positionWord();
     try {
       const result = await this.api(`/api/books/${this.state.book.id}/word`, { paragraph: pid, word, offset });
@@ -368,7 +368,8 @@ export class ReadingTools {
       $('#word-basic').textContent = result.basicMeaning; $('#word-meaning').textContent = result.contextMeaning;
       $('#word-note').textContent = result.note; $('#word-note').hidden = !result.note;
       $('#word-status').hidden = true; $('#word-definitions').hidden = false;
-      $('#word-context').textContent = (result.provider === 'microsoft' ? '微软免配置 · ' : '') + (result.contextWindow ? `当前句 + 前 ${result.contextWindow.before} 句 · 不读取后文` : '仅参考当前句和之前最多 10 句');
+      $('#word-context').textContent = '由 ' + (result.provider === 'llm' ? 'LLM' : 'Azure Translate') + ' 提供';
+      $('#word-context').title = result.contextWindow ? `当前句 + 前 ${result.contextWindow.before} 句 · 不读取后文` : '仅参考当前句和之前最多 10 句';
       this.positionWord();
     } catch (error) {
       if (request !== this.wordRequest || epoch !== this.state.epoch) return;

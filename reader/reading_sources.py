@@ -20,7 +20,9 @@ def sources(store, book, settings):
                 detail = json.loads(detail[0]) if detail else {}
                 provider = detail.get('provider', 'llm')
                 job = store.db.execute('SELECT model FROM book_translation_jobs WHERE book=? AND profile=?', (book['id'], fingerprint)).fetchone()
-                metadata = {'provider': provider, 'model': {'azure': 'Azure Translator', 'microsoft': '微软翻译（免配置）'}.get(provider, (job[0] if job else '') or '大模型译文'), 'targetLanguage': None}
+                metadata = {'provider': provider, 'model': {'azure': 'Azure Translate', 'microsoft': 'Azure Translate'}.get(provider, (job[0] if job else '') or '大模型译文'), 'targetLanguage': None}
+            if metadata.get('provider') in {'azure', 'microsoft'}:
+                metadata['model'] = 'Azure Translate'
             result.append({**metadata, 'profile': fingerprint, 'completed': count, 'total': len(book['paragraphs']),
                            'percent': round(count * 100 / max(1, len(book['paragraphs'])), 1), 'updated': updated, 'current': fingerprint == current})
         return result

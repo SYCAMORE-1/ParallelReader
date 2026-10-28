@@ -9,10 +9,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / '.data' / 'font-build'))
+sys.path.insert(0, str(ROOT / 'test-results' / 'font-build'))
 from fontTools.ttLib import TTFont
 
-SOURCES = ROOT / '.data' / 'font-sources'
+SOURCES = ROOT / 'test-results' / 'font-sources'
 OUTPUT = ROOT / 'public' / 'fonts'
 
 

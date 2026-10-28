@@ -1,7 +1,7 @@
 """Keyless dictionary meanings and marked-word translation with past-only context."""
 import html
 from html.parser import HTMLParser
-from reader.azure_translation import LANGUAGES, PlainText
+from reader.machine_translation import LANGUAGES, PlainText
 from reader.microsoft_translation import CLIENT, utf16_length
 from reader.text import sentence_window, split_sentences
 
@@ -69,7 +69,7 @@ def explain(book, pid, word, settings, offset):
     basic = meanings[0]['displayTarget'] if meanings else ''
     if not basic:
         parser = PlainText(); parser.feed(CLIENT.one('<p>' + html.escape(word) + '</p>', language)); basic = ''.join(parser.parts).strip()
-    if not basic: raise RuntimeError('微软翻译没有返回有效词义，请重试')
+    if not basic: raise RuntimeError('Azure Translate没有返回有效词义，请重试')
     markup, current, before, trimmed = context_markup(book, pid, offset, word)
     parsed = MarkedText(CLIENT.one(markup, language))
     if not parsed.sentence:
@@ -78,10 +78,10 @@ def explain(book, pid, word, settings, offset):
             plain = PlainText(); plain.feed(raw); parsed.sentence = plain.parts
     contextual = ''.join(parsed.word).strip()
     sentence = ''.join(parsed.sentence).strip()
-    if not sentence: raise RuntimeError('微软翻译没有返回有效语境译文，请重试')
+    if not sentence: raise RuntimeError('Azure Translate没有返回有效语境译文，请重试')
     tags = list(dict.fromkeys(POS.get(str(item.get('posTag') or '').upper(), '') for item in meanings)); tags = [tag for tag in tags if tag]
     lemma = entry.get('normalizedSource')
     return {'lemma': lemma if isinstance(lemma, str) and lemma.strip() else word, 'partOfSpeech': ' / '.join(tags[:3]),
             'basicMeaning': basic, 'contextMeaning': contextual or sentence, 'sentenceTranslation': sentence,
             'contextKind': 'term' if contextual else 'sentence', 'note': '', 'provider': 'microsoft',
-            'model': '微软翻译（免配置）', 'contextWindow': {'before': before, 'after': 0, 'trimmed': trimmed}}
+            'model': 'Azure Translate', 'contextWindow': {'before': before, 'after': 0, 'trimmed': trimmed}}

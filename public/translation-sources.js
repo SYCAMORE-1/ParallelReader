@@ -8,7 +8,7 @@ export class TranslationSources {
     this.dialog.addEventListener('cancel', event => event.preventDefault());
   }
   label(source) {
-    const provider = { llm: 'LLM', azure: 'Azure API', microsoft: '微软免配置' }[source.provider] || '本地译文';
+    const provider = { llm: 'LLM', azure: 'Azure Translate', microsoft: 'Azure Translate' }[source.provider] || '本地译文';
     return `${provider}${source.provider === 'llm' && source.model ? ' · ' + source.model : ''} · ${source.completed}/${source.total} 段${source.targetLanguage ? ' · ' + source.targetLanguage : ' · 语言未记录'}`;
   }
   update(value) {
@@ -16,7 +16,7 @@ export class TranslationSources {
     this.value = value; this.state.readingProfile = value.selectedProfile;
     const source = value.sources?.find(item => item.profile === value.selectedProfile);
     this.button.hidden = !this.state.book;
-    this.button.textContent = source ? '本地译文：' + ({llm: 'LLM', azure: 'Azure API', microsoft: '微软免配置'}[source.provider] || '已保存') + ` · ${source.completed}/${source.total} 段` : '译文：当前服务';
+    this.button.textContent = source ? '本地译文：' + ({llm: 'LLM', azure: 'Azure Translate', microsoft: 'Azure Translate'}[source.provider] || '已保存') + ` · ${source.completed}/${source.total} 段` : '译文：当前服务';
     this.button.title = source ? this.label(source) + ' · 点击切换阅读译文；缺失部分使用当前翻译服务' : '当前配置尚无已保存译文；点击查看本地译文';
   }
   async resolve(book, { force = false, epoch = this.state.epoch, preferred = null } = {}) {

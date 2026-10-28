@@ -17,7 +17,7 @@ A portable bilingual EPUB reader with contextual translation, proofreading, and 
 - Separate typography settings for each language and multiple reading themes.
 - Context-aware translation using book metadata, surrounding passages, and available glossaries.
 - Separate translation, proofreading, and optional word-lookup models, configured by the user.
-- Keyless Microsoft web translation, plus optional Azure Translator API with your own credentials.
+- Choose LLM or Azure Translate for book translation; choose the word/context translation service independently.
 - Whole-book processing with progress, pause/resume, retries, and repeated proofreading passes.
 - Up to four text chapters and two images concurrently per book.
 - In-image translation with original/translated image switching and QR-code preservation.
@@ -56,9 +56,9 @@ python -m pip install -r requirements.txt
 python server.py --open
 ```
 
-Import an unencrypted EPUB and configure compatible model services in Settings. An optional separate word-lookup model can be configured; leaving its endpoint and model name empty uses the translation model.
+Import an unencrypted EPUB and select LLM or Azure Translate in Settings. LLM book translation uses the book model configuration. LLM word/context explanations require their own endpoint and model; changing the book service does not change the lookup service.
 
-Saved content can be read offline. New translations require the selected service; proofreading requires an LLM. Word lookup defaults to keyless Microsoft translation and can independently use an LLM for fuller explanations. Model weights are not included. Content needed for a request is sent to the selected service.
+Saved content can be read offline. New translations require the selected service; proofreading requires an LLM. Word lookup defaults to Azure Translate and can independently use an LLM for fuller explanations. Model weights are not included. Content needed for a request is sent to the selected service.
 
 ### Saved translations and service switching
 
@@ -66,19 +66,26 @@ Translations remain stored separately by service/configuration. Changing the tra
 
 When reading a saved version, cached paragraphs and their sentence correspondence are reused without translation requests. Missing paragraphs use the current service and stay in that service's own cache. EPUB export uses the selected reading version, including those filled gaps. Whole-book background processing and proofreading retain their own configuration-specific progress.
 
-Word lookup is independent of both the reading version and paragraph service. By default it obtains basic meanings and abbreviated English parts of speech from Microsoft's web dictionary, and translates the selected word in the current sentence using only preceding context, up to ten sentences. Oversized context is shortened to the service's request limit. Dictionary parts of speech describe common uses; the contextual result is a machine translation, with the whole translated sentence shown if word markup is unavailable. Choose **LLM contextual explanation** in Settings for richer semantic explanations.
+A single word/context service setting controls both basic meanings and contextual explanations, independently of the book service. Azure Translate provides dictionary meanings, English parts of speech and a contextual translation using the current sentence and up to ten preceding sentences. Oversized context is shortened to the service's request limit. Dictionary parts of speech describe common uses; the contextual result is a machine translation, with the whole translated sentence shown if word markup is unavailable. Choose **LLM** in the word/context service setting for richer explanations, using a separately configured lookup model. The popup identifies the provider in one small line.
 
-### Microsoft and Azure translation
+### Translation services
 
-For **no-configuration translation**, select **Microsoft translation (no setup)** in Settings. It uses Microsoft's public web translator, automatically obtains a temporary session, and needs no Azure account, Endpoint, or Key. Session credentials are kept only in memory. A network connection is required; upstream changes, verification pages, or rate limits may temporarily interrupt this option.
+Select **LLM** or **Azure Translate** under **Book translation**. LLM supports contextual translation, proofreading and image translation. Azure Translate handles text; images remain original and are excluded from its translation progress. Both support saved paragraph translations, sentence correspondence, whole-book processing, pause/resume and EPUB export.
 
-Microsoft web translation supports the same text-only reading and whole-book processing workflow described below. Its translations are cached separately from both LLM and Azure API translations. This option is distinct from the Azure cloud API's F0 free tier.
+Select **LLM** or **Azure Translate** separately under **Word / context translation**. This choice controls both fields in the lookup popup and does not follow the book service. LLM lookup uses its own endpoint, model and optional key.
 
-For your own Azure resource, select **Azure Translator API (own Key)** in **Settings → Translation service** and enter its **Endpoint**, **Key**, and, when required, **Region**. Global resources may leave Region blank; regional and multi-service resources require it. Use **Test connection** before saving; this sends a short text to Azure. The implementation uses the Translator Text API v3.0 with automatic source-language detection.
+### Keeping the private library compact
 
-Azure mode supports paragraph translation, sentence correspondence, whole-book background translation, pause/resume, retries, local caching, and EPUB export. **Images remain original and are excluded from translation progress.** Paragraph proofreading and image translation require an LLM; word lookup is configured independently. Azure does not use the LLM's context/glossary prompts. Switching back restores the LLM configuration. Existing LLM versions can be selected for reading; background Azure progress counts its own translated paragraphs.
+The library directory contains original EPUBs in `sources/`, translated illustrations in `translated-images/`, exported EPUBs in `exports/`, and `reader.sqlite3` for settings, saved translations, sentence alignment, dictionary caches, reading positions, bookmarks and resumable jobs. `library-catalog.json` retains import information. SQLite may also create temporary `-wal` and `-shm` files while running.
 
-Credentials are stored locally in `.data/`; the API never returns saved keys to the browser. Public builds contain no credentials, and the private-library export tool removes keys from its copy. Azure usage is subject to your resource's pricing and quota. See [Microsoft's authentication documentation](https://learn.microsoft.com/en-us/azure/ai-services/translator/text-translation/reference/authentication).
+Builds and test output belong in `dist/` and `test-results/`, outside `.data/`. To inspect generated files that can be removed, then clean them with the reader closed:
+
+```powershell
+python tools/clean_library.py
+python tools/clean_library.py --apply --prune-history
+```
+
+Cleanup keeps originals, current saved translation versions, referenced illustrations and reading/job state. It removes unreferenced translated images, older export files and, with `--prune-history`, previous proofreading snapshots. Current LLM/Azure translation versions remain available. It verifies the database contents before and after compaction; it does not change future history retention.
 
 ### Public builds and checks
 
@@ -101,7 +108,7 @@ This beta supports unencrypted EPUBs. Complex layouts, small or rotated image te
 - 中英文字体、字号和粗细独立调整，多种阅读主题。
 - 结合书籍信息、上下文和可用术语表进行翻译。
 - 初译、校对和可选的独立查词模型由使用者自行配置。
-- 提供免配置的微软网页翻译，以及自备 Key 的 Azure Translator API 文字翻译。
+- 图书翻译提供 LLM 和 Azure Translate；单词／语境翻译独立选择服务。
 - 全书后台处理，支持进度显示、暂停、继续、失败重试和多轮校对。
 - 每本书最多同时处理四个文本章节和两张图片。
 - 译文直接排入图片，可切换原图／译图，并保留二维码。
@@ -140,9 +147,9 @@ python -m pip install -r requirements.txt
 python server.py --open
 ```
 
-导入未加密 EPUB 后，在设置中填写兼容的模型服务。查词接口和模型名称同时留空时，查词使用翻译模型。
+导入未加密 EPUB 后，在设置中选择 LLM 或 Azure Translate。图书 LLM 与查词 LLM 分别配置接口和模型，改变图书服务不会改变查词服务。
 
-已有译文可离线阅读；新增翻译需要连接所选服务，正文校对需要大模型。单词翻译默认使用微软免配置服务，也可独立选择大模型语境解释。程序不包含模型权重，处理所需内容会发送到所选服务。
+已有译文可离线阅读；新增翻译需要连接所选服务，正文校对需要大模型。单词翻译默认使用 Azure Translate，也可独立选择 LLM。程序不包含模型权重，处理所需内容会发送到所选服务。
 
 ### 已有译文与服务切换
 
@@ -150,19 +157,26 @@ python server.py --open
 
 阅读已有版本时，已保存段落和句子对应直接复用，不发送翻译请求。缺失段落由当前服务补齐，并保存在当前服务自己的缓存中。EPUB 导出使用所选阅读版本及已补齐的段落；整书后台处理和校对仍单独显示当前配置的任务进度。
 
-单词翻译独立于正文服务和所选译本。默认从微软网页词典获取基本义及英文词性缩写，并仅结合当前句及之前最多十句翻译选中单词；上下文过长时会按服务请求上限缩短。词性展示词典常见用法，语境结果属于机器翻译；单词标记丢失时会明确显示为所在句译文。需要更充分的辨义解释时，可在设置中选择**大模型语境解释**。
+单词翻译独立于正文服务和所选译本。Azure Translate 从词典获取基本义及英文词性缩写，并仅结合当前句及之前最多十句翻译选中单词；上下文过长时会按服务请求上限缩短。词性展示词典常见用法，语境结果属于机器翻译；单词标记丢失时会明确显示为所在句译文。需要更充分的辨义解释时，可在单词／语境翻译设置中选择 **LLM**。
 
-### 微软翻译与 Azure API
+### 翻译服务
 
-想要**开箱即用、无需配置**，在设置中选择**微软翻译（免配置）**即可。它使用微软公开的网页翻译服务，自动获取临时会话，无需 Azure 账号、Endpoint 或 Key；会话凭据仅保存在内存中。此功能需要联网，网页变化、验证页面或限流可能造成暂时不可用。
+**图书翻译**提供 **LLM** 和 **Azure Translate**。LLM 支持语境翻译、校对及图片翻译；Azure Translate 处理文字，图片保留原图，不计入其翻译进度。两者均支持段落保存、句子对应、整书处理、暂停／继续和 EPUB 导出。
 
-微软免配置翻译支持下述文字阅读和整书处理流程，缓存与大模型、Azure API 分开保存。此选项与 Azure 云 API 的 F0 免费额度是两种接入方式。
+**单词／语境翻译**单独选择 **LLM** 或 **Azure Translate**，一个选项同时控制基本义和语境结果，不随图书服务变化。查词 LLM 使用独立的接口、模型和可选 Key。悬浮框用一行小字显示“由 LLM 提供”或“由 Azure Translate 提供”。
 
-使用自己的 Azure 资源时，在**设置 → 翻译服务**中选择 **Azure Translator API（自备 Key）**，填写 **Endpoint、Key** 及所需的 **Region**。全局资源可留空 Region；区域资源和多服务资源需要填写。保存前可点击**测试连接**，向 Azure 发送一句简短文本。程序使用 Translator Text API v3.0，自动识别原文语言。
+### 保持私人书库精简
 
-Azure 模式支持段落翻译、句子对应、全书后台翻译、暂停／继续、重试、本地缓存和 EPUB 导出。**图片保留原图，不计入翻译进度**；正文校对和图片翻译需要大模型，单词翻译独立选择服务。Azure 不使用大模型的上下文／术语表提示词。切回大模型后可恢复原配置，也可选择已有的大模型译文继续阅读；Azure 后台任务进度只统计其自身的译文。
+`.data/` 中的 `sources/` 保存原始 EPUB，`translated-images/` 保存译图，`exports/` 保存导出 EPUB；`reader.sqlite3` 保存配置、已有译文、句子对应、词典缓存、阅读位置、书签和续传任务，`library-catalog.json` 保存导入信息。运行时出现的 `-wal`、`-shm` 是 SQLite 的临时文件。
 
-密钥只保存在本机 `.data/` 中，接口不会把已保存的密钥返回浏览器。公开程序包不含密钥；私人书库导出工具会清空副本中的密钥。Azure 使用量受所用资源的计费与配额限制。配置说明见 [Microsoft 官方身份验证文档](https://learn.microsoft.com/en-us/azure/ai-services/translator/text-translation/reference/authentication)。
+发布包和测试产物放在 `.data/` 外的 `dist/`、`test-results/`。关闭阅读器后，可先检查、再清理无用生成文件：
+
+```powershell
+python tools/clean_library.py
+python tools/clean_library.py --apply --prune-history
+```
+
+清理保留原书、当前各版本译文、正在引用的译图、阅读和任务状态；删除未引用译图、较旧导出文件，添加 `--prune-history` 时同时删除旧校对快照。LLM／Azure 的当前已保存译本保留可读。工具会逐表校验整理前后的数据库，再压缩空间；不会改变未来的历史保留规则。
 
 ### 公开构建与检查
 

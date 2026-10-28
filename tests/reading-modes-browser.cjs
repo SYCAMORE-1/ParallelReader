@@ -49,12 +49,12 @@ const { chromium } = require(modules ? path.join(modules, 'playwright') : 'playw
     const request = route.request(), endpoint = new URL(request.url()).pathname;
     if (endpoint.endsWith('/translation-sources')) return route.fulfill({contentType:'application/json',body:JSON.stringify({configurationProfile:profile,selectedProfile:profile,selectionRequired:false,sources:[]})});
     let value;
-    if (endpoint === '/api/settings') value = { baseUrl: 'http://127.0.0.1:1/v1', model: 'QA-model', apiKey: '', targetLanguage: '简体中文', profile };
+    if (endpoint === '/api/settings') value = { baseUrl: 'http://127.0.0.1:1/v1', model: 'QA-model', apiKey: '', wordProvider: 'llm', wordBaseUrl: 'https://words.example.invalid/v1', wordModel: 'word-model', targetLanguage: '简体中文', profile };
     else if (endpoint === '/api/books') value = [{ id: book.id, title: book.title, author: book.author, cover: null, currentPage, pageCount: book.pages.length }];
     else if (endpoint === '/api/sample') value = { available: false };
     else if (endpoint.endsWith('/word')) {
       wordQueries.push(request.postDataJSON());
-      value = { lemma: 'pause', partOfSpeech: 'v.', basicMeaning: '暂停，停下。', contextMeaning: '这里指Morgan在房子旁停下脚步。', note: 'paused是过去式。', model: 'Qwen/Qwen3.5-9B', contextWindow: { before: 0, after: 0 } };
+      value = { provider: 'llm', lemma: 'pause', partOfSpeech: 'v.', basicMeaning: '暂停，停下。', contextMeaning: '这里指Morgan在房子旁停下脚步。', note: 'paused是过去式。', model: 'Qwen/Qwen3.5-9B', contextWindow: { before: 0, after: 0 } };
     } else if (endpoint.endsWith('/align')) { alignments++; value = items[request.postDataJSON().paragraph]; }
     else if (endpoint.endsWith('/progress')) { currentPage = request.postDataJSON().page; value = { ok: true }; }
     else if (endpoint.endsWith('/window')) {
@@ -192,7 +192,8 @@ const { chromium } = require(modules ? path.join(modules, 'playwright') : 'playw
     assert.equal(wordQueries[0].word, 'paused');
     assert.equal(wordQueries[0].offset, book.paragraphs[0].text.indexOf('paused'));
     assert.equal(await page.locator('#word-pos').textContent(), 'v.');
-    assert.match(await page.locator('#word-context').textContent(), /当前句.*前 0 句.*不读取后文/);
+    assert.equal(await page.locator('#word-context').textContent(), '由 LLM 提供');
+    assert.match(await page.locator('#word-context').getAttribute('title'), /当前句.*前 0 句.*不读取后文/);
     const dictionaryFonts = await page.evaluate(() => ['#word-basic', '#word-meaning', '#word-pos', '#word-note'].map(selector => parseFloat(getComputedStyle(document.querySelector(selector)).fontSize)));
     assert.ok(dictionaryFonts[0] >= 14 && dictionaryFonts[1] >= 14 && dictionaryFonts[2] >= 12 && dictionaryFonts[3] >= 12);
     await page.screenshot({ path: path.join(destination, 'word-larger-desktop.png') });

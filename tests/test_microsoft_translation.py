@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.request
 from unittest.mock import patch
 
-from reader.azure_translation import PlainText, protect_text
+from reader.machine_translation import PlainText, protect_text
 from reader.microsoft_translation import MicrosoftTranslator, Redirects, chunks, parse_session, allowed_url, utf16_length
 from reader.providers import images_enabled, review_enabled
 from reader.storage import Store
@@ -105,23 +105,22 @@ class MicrosoftTests(unittest.TestCase):
             store = Store(directory)
             settings = validate_settings({'translationProvider': 'microsoft'}, store.settings())
             store.save_settings(settings); book = store.add(queue_book())
-            self.assertEqual(settings['baseUrl'], ''); self.assertEqual(settings['azureApiKey'], '')
+            self.assertEqual(settings['baseUrl'], ''); self.assertNotIn('azureApiKey', settings)
             self.assertFalse(images_enabled(settings)); self.assertFalse(review_enabled(settings))
-            self.assertNotEqual(profile(settings), profile(settings | {'translationProvider': 'azure'}))
             self.assertNotEqual(profile(settings), profile(settings | {'translationProvider': 'llm'}))
-            self.assertEqual(profile(settings), profile(settings | {'azureApiKey': 'irrelevant', 'model': 'irrelevant'}))
+            self.assertEqual(profile(settings), profile(settings | {'wordApiKey': 'irrelevant', 'model': 'irrelevant'}))
             with patch('reader.microsoft_translation.CLIENT.translate', side_effect=lambda settings, texts: ['<p>测试译文。</p>'] * len(texts)) as web, patch('reader.translation.request_json', side_effect=AssertionError('No LLM calls')):
                 worker = Translator(store, workers=2)
                 try:
                     worker.bulk_action(book, 'start')
                     until(lambda: worker.bulk_status(book)['state'] == 'completed')
                     value = worker.bulk_status(book)
-                    self.assertEqual(value['model'], '微软翻译（免配置）'); self.assertEqual(value['percent'], 100)
+                    self.assertEqual(value['model'], 'Azure Translate'); self.assertEqual(value['percent'], 100)
                     self.assertEqual(web.call_count, 10)
                     detail = store.translation_detail(book['id'], 0, profile(settings))
                     self.assertEqual(detail['provider'], 'microsoft'); self.assertEqual(detail['alignment'], [{'source': [0], 'target': [0]}])
                     worker.bulk_action(book, 'start'); self.assertEqual(web.call_count, 10)
-                    with self.assertRaisesRegex(ValueError, '免配置'): worker.reproof.request(book, {'scope': 'book'})
+                    with self.assertRaisesRegex(ValueError, 'Azure Translate'): worker.reproof.request(book, {'scope': 'book'})
                 finally:
                     worker.close()
                     for thread in worker.threads: thread.join(3)

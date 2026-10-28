@@ -58,11 +58,10 @@ class PublicLayoutTests(unittest.TestCase):
                 self.assertEqual(source.bulk_jobs()[0]['state'], 'running')
             finally: source.db.close()
 
-    def test_word_configuration_uses_its_own_key_and_falls_back_when_empty(self):
+    def test_word_configuration_uses_its_own_key_and_never_inherits_book_model(self):
         base = {'baseUrl': 'https://translation.example.invalid/v1', 'model': 'text-model', 'apiKey': 'primary-test',
                 'targetLanguage': '简体中文', 'reviewEnabled': False, 'reviewBaseUrl': '', 'reviewModel': '', 'reviewApiKey': ''}
-        default = word_settings(base)
-        self.assertEqual((default['baseUrl'], default['model'], default['apiKey']), (base['baseUrl'], base['model'], base['apiKey']))
+        with self.assertRaises(ValueError): word_settings(base)
         values = {'wordBaseUrl': 'https://words.example.invalid/v1', 'wordModel': 'word-model', 'wordApiKey': 'word-test'}
         result = validate_settings(values, base)
         selected = word_settings(result)

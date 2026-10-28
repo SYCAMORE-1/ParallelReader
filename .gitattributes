@@ -6,3 +6,10 @@ test-results/ export-ignore
 *.sqlite3 export-ignore
 *.db export-ignore
 .env* export-ignore
+*.exe binary
+*.dll binary
+*.pyd binary
+*.zip binary
+*.woff2 binary
+*.ttf binary
+runtime/** -text

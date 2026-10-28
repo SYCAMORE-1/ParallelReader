@@ -440,6 +440,7 @@ body:not(.immersive) .reader{padding-top:14px}
 .library-view-controls{display:flex;justify-content:flex-end;gap:2px;margin:0 0 12px;padding:2px 0}
 .library-view-controls button{display:grid;place-items:center;width:36px;height:36px;border-radius:7px;color:var(--text)}
 .library-view-controls button svg{width:18px;height:18px}
+.library-view-controls .library-add{margin-right:auto;border:1px solid var(--line);border-radius:50%;color:var(--accent);background:var(--paper)}
 .library-view-controls button:hover{background:var(--hover)}
 .library-view-controls button[aria-pressed="true"]{color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--line)}
 #library-list .library-progress-group{display:grid;gap:4px;margin-top:8px}

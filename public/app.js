@@ -725,15 +725,20 @@ async function importBook(file, sample = false) {
   if (importing) return;
   if (!sample && (!file || !file.name.toLowerCase().endsWith('.epub'))) return toast('请选择 .epub 格式的电子书');
   if (file?.size > 100 * 1024 * 1024) return toast('EPUB 超过 100 MB 导入限制');
-  importing = true; $('#import-button').disabled = true; $('#sample-button').disabled = true; $('#welcome-import').disabled = true;
+  importing = true;
+  for (const id of ['import-button', 'library-add', 'sample-button', 'welcome-import']) $('#' + id).disabled = true;
   toast('正在整理书籍和章节…');
   try {
     const book = sample ? await api('/api/import-sample', {}) : await api('/api/import', undefined, { method: 'POST', headers: { 'Content-Type': 'application/epub+zip' }, body: file });
-    state.library = await api('/api/books'); await openBook(book.id, book); toast(`已导入《${book.title}》，共 ${book.chapters.length} 个章节单元`);
+    state.library = await api('/api/books'); await openBook(book.id, book); toast(`已导入《${book.title}》，原书已保存到本机书库`);
   } catch (error) { report(error); }
-  finally { importing = false; $('#import-button').disabled = false; $('#sample-button').disabled = false; $('#welcome-import').disabled = false; $('#file-input').value = ''; }
+  finally {
+    importing = false;
+    for (const id of ['import-button', 'library-add', 'sample-button', 'welcome-import']) $('#' + id).disabled = false;
+    $('#file-input').value = '';
+  }
 }
-$('#import-button').onclick = $('#welcome-import').onclick = () => $('#file-input').click();
+$('#library-add').onclick = $('#import-button').onclick = $('#welcome-import').onclick = () => $('#file-input').click();
 $('#file-input').onchange = event => importBook(event.target.files[0]);
 $('#sample-button').onclick = () => importBook(null, true);
 let dragDepth = 0;

@@ -47,9 +47,11 @@ The transfer folder is private data. Keep it separate from public program releas
 
 ### Getting started
 
-The Windows x64 portable package includes its runtime and Chinese fonts. Extract the entire package and run `start.bat`. Use `start-mobile.bat` for access from a phone on the same local network.
+On Windows 10/11 x64, download this repository using **Code → Download ZIP**, then extract the entire folder and run `start.bat`. The `main` branch includes the portable Python runtime, Pillow and Chinese fonts, so no Python or pip installation is required. Keep the startup window open while reading. Do not run the launcher from inside the ZIP.
 
-For source-based use:
+The Windows portable release works the same way. Use `start-mobile.bat` for access from a phone on the same local network. If startup fails, run `check-portable.bat` to check the runtime, imports, fonts and any existing library. Release packages also verify their file checksums.
+
+For development with your own Python 3.10+ installation instead of the bundled runtime:
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -57,6 +59,8 @@ python server.py --open
 ```
 
 Import an unencrypted EPUB and select LLM or Azure Translate in Settings. LLM book translation uses the book model configuration. LLM word/context explanations require their own endpoint and model; changing the book service does not change the lookup service.
+
+Click **＋** in the bookshelf to select an EPUB from your file system. Importing copies the original file into `.data/sources/`; the reader does not depend on the file remaining in its previous location. Copy the entire `.data/` folder when moving your library to another computer.
 
 Saved content can be read offline. New translations require the selected service; proofreading requires an LLM. Word lookup defaults to Azure Translate and can independently use an LLM for fuller explanations. Model weights are not included. Content needed for a request is sent to the selected service.
 
@@ -138,9 +142,11 @@ python tools/export_library.py --output private-transfer/.data
 
 ### 开始使用
 
-Windows 64 位便携版已内置运行环境和中文字体。完整解压后双击 `start.bat`；手机同局域网访问使用 `start-mobile.bat`。
+Windows 10/11 64 位电脑可直接在仓库点击 **Code → Download ZIP**，完整解压后双击 `start.bat`。`main` 分支包含便携 Python、Pillow 和中文字体，无需安装 Python 或 pip。阅读时保持启动窗口打开，不要在压缩包内直接运行。
 
-从源码运行：
+Windows 便携发布包使用方法相同；手机同局域网访问使用 `start-mobile.bat`。启动失败时运行 `check-portable.bat`，检查运行环境、程序导入、字体及已有书库；正式构建的发布包还会校验文件完整性。
+
+开发时如需使用自己安装的 Python 3.10+，可运行：
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -148,6 +154,8 @@ python server.py --open
 ```
 
 导入未加密 EPUB 后，在设置中选择 LLM 或 Azure Translate。图书 LLM 与查词 LLM 分别配置接口和模型，改变图书服务不会改变查词服务。
+
+点击书架中的 **＋**，从文件系统选择 EPUB。导入时原文件会复制到 `.data/sources/`，之后不依赖原来的文件位置；迁移时带上整个 `.data/` 文件夹即可。
 
 已有译文可离线阅读；新增翻译需要连接所选服务，正文校对需要大模型。单词翻译默认使用 Azure Translate，也可独立选择 LLM。程序不包含模型权重，处理所需内容会发送到所选服务。
 
@@ -200,8 +208,10 @@ ParallelReader/
 ├─ docs/                   # Public documentation and demo screenshot / 公开文档与示例截图
 ├─ tests/                  # Synthetic tests / 人工构造的测试
 ├─ tools/                  # Public build and private transfer tools / 构建与迁移工具
+├─ runtime/                # Portable Python, Pillow and licenses / 便携运行环境与许可
 ├─ start.bat
 ├─ start-mobile.bat
+├─ check-portable.bat
 └─ .data/                  # PRIVATE, Git-ignored, never publicly bundled / 私人书库
    ├─ reader.sqlite3
    ├─ sources/

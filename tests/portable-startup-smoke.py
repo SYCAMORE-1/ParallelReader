@@ -34,6 +34,9 @@ def main():
                         time.sleep(.5)
                 else:raise RuntimeError('Portable startup timed out: '+logfile.read_text(encoding='utf-8',errors='replace'))
                 if len(books)!=args.expect_books or any(not b.get('bookmark') for b in books):raise RuntimeError('Unexpected bookshelf/bookmark state')
+                for asset in ['/', '/app.js', '/style.css', '/fonts/reader-sans.woff2']:
+                    with opener.open(base+asset,timeout=10) as response:
+                        if response.status!=200 or not response.read(64):raise RuntimeError('Missing UI asset: '+asset)
                 image_checked=False
                 for summary in books:
                     with opener.open(base+'/api/books/'+summary['id'],timeout=15) as response:book=json.load(response)
@@ -50,7 +53,7 @@ def main():
                     if 'running' in states:raise RuntimeError('Migrated image jobs unexpectedly started')
                 finally:db.close()
                 print(json.dumps({'ok':True,'startupScript':True,'noHostPython':True,'unrelatedWorkingDirectory':True,'hostPythonEnvironmentIgnored':True,
-                                  'books':len(books),'bookmarks':len(books),'originalImageEndpoint':image_checked,'backgroundJobsRemainPaused':True,'port':port}),flush=True)
+                                  'books':len(books),'bookmarks':len(books),'uiAssetsAvailable':True,'originalImageEndpoint':image_checked,'backgroundJobsRemainPaused':True,'port':port}),flush=True)
             finally:
                 quoted=str(release).replace("'","''")
                 stop=f"$owner = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess; if ($owner) {{ $p=Get-CimInstance Win32_Process -Filter ('ProcessId='+$owner); if ($p.CommandLine.Contains('{quoted}') -and $p.CommandLine.Contains('--port {port}')) {{ Stop-Process -Id $owner }} else {{ throw 'Refusing to stop an unrelated process' }} }}"

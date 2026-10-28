@@ -13,7 +13,9 @@ def main():
     from PIL import Image, ImageFont
     from reader.image_render import chinese_font
     import server
-    manifest = json.loads((ROOT / 'release-manifest.json').read_text(encoding='utf-8'))
+    # Source ZIPs include the same runtime, but only release builds have a manifest.
+    manifest_path = ROOT / 'release-manifest.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.is_file() else {'files': {}}
     for relative, expected in manifest['files'].items():
         path = (ROOT / relative).resolve()
         path.relative_to(ROOT)
@@ -47,7 +49,7 @@ def main():
         finally:
             connection.close()
     print(json.dumps({'ok': True, 'python': sys.version.split()[0], 'runtimePrefix': sys.prefix,
-                      'pillow': Image.__version__, 'checkedFiles': len(manifest['files']),
+                      'pillow': Image.__version__, 'checkedFiles': len(manifest['files']), 'manifestAvailable': manifest_path.is_file(),
                       'portableFont': str(font.relative_to(ROOT)), 'sampleAvailable': server.DEFAULT_SAMPLE.is_file(),
                       'library': summary}, ensure_ascii=False), flush=True)
 

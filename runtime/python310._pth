@@ -1,0 +1,5 @@
+python310.zip
+DLLs
+Lib/site-packages
+..
+import site

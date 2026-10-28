@@ -1,0 +1,2 @@
+Python 3.10.6 Windows AMD64
+Pillow 11.1.0

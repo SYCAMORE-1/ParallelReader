@@ -300,8 +300,10 @@ class HttpTests(unittest.TestCase):
                 with urllib.request.urlopen(req) as response:
                     return json.load(response)
             try:
-                book = post('/api/import', epub_fixture(), raw=True)
+                original_epub = epub_fixture()
+                book = post('/api/import', original_epub, raw=True)
                 self.assertEqual(len(book["paragraphs"]), 3)
+                self.assertEqual((Path(directory) / 'sources' / (book['id'] + '.epub')).read_bytes(), original_epub)
                 post('/api/books/' + book['id'] + '/window', {"page": 0})
                 until(lambda: len(app.store.translations(book['id'], [0, 1, 2], profile(app.store.settings()))) == 3)
                 with self.assertRaises(urllib.error.HTTPError) as error:
@@ -311,7 +313,7 @@ class HttpTests(unittest.TestCase):
                     post('/api/books/' + book['id'] + '/progress', {"page": 999})
                 self.assertEqual(error.exception.code, 400)
                 # Reimport is idempotent and cannot destroy reading progress/cache.
-                self.assertEqual(post('/api/import', epub_fixture(), raw=True)['id'], book['id'])
+                self.assertEqual(post('/api/import', original_epub, raw=True)['id'], book['id'])
                 with urllib.request.urlopen(url + '/api/settings') as response:
                     self.assertEqual(json.load(response)['apiKey'], '')
             finally:

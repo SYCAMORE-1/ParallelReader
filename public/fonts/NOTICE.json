@@ -1,0 +1,34 @@
+[
+  {
+    "file": "reader-song.woff2",
+    "family": "Parallel Song",
+    "original": "Noto Serif SC",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+    "license": "song-OFL.txt",
+    "bytes": 11022276
+  },
+  {
+    "file": "reader-sans.woff2",
+    "family": "Parallel Sans",
+    "original": "Noto Sans SC",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+    "license": "sans-OFL.txt",
+    "bytes": 7783268
+  },
+  {
+    "file": "reader-kai.woff2",
+    "family": "Parallel Kai",
+    "original": "LXGW WenKai Lite",
+    "source": "https://raw.githubusercontent.com/lxgw/LxgwWenKai-Lite/main/fonts/TTF/LXGWWenKaiLite-Regular.ttf",
+    "license": "kai-OFL.txt",
+    "bytes": 5305408
+  },
+  {
+    "file": "reader-sans.ttf",
+    "family": "Parallel Sans",
+    "original": "Noto Sans SC",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+    "license": "sans-OFL.txt",
+    "bytes": 17773268
+  }
+]

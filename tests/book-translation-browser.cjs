@@ -1,0 +1,111 @@
+/* Uses an isolated Python server/database and never contacts a real LLM. */
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const assert = require('node:assert/strict');
+const modules = process.env.PARALLEL_NODE_MODULES;
+const { chromium } = require(modules ? path.join(modules, 'playwright') : 'playwright');
+
+(async () => {
+  const root = path.resolve('test-results', 'book-translation-browser');
+  fs.mkdirSync(root, { recursive: true });
+  const data = fs.mkdtempSync(path.join(root, 'data-'));
+  const server = spawn(process.env.PYTHON || 'python', ['tests/book-translation-fixture.py', '--data', data], { cwd: path.resolve('.'), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let browser;
+  const errors = [];
+  server.stderr.on('data', chunk => errors.push(chunk.toString()));
+  try {
+    const { url, book } = await new Promise((resolve, reject) => {
+      let output = '';
+      const timer = setTimeout(() => reject(Error('Fixture failed to start')), 10000);
+      server.stdout.on('data', chunk => { output += chunk; if (output.includes('\n')) { clearTimeout(timer); resolve(JSON.parse(output.split('\n')[0])); } });
+      server.once('error', reject);
+      server.once('exit', code => { clearTimeout(timer); reject(Error(`Fixture exited: ${code}`)); });
+    });
+    browser = await chromium.launch({ channel: 'msedge', headless: true });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1080 } });
+    await context.addInitScript(() => localStorage.setItem('parallel.prefetch', 'false'));
+    let page = await context.newPage();
+    page.on('pageerror', error => errors.push(error.message));
+    const endpoint = url + '/api/books/' + book + '/pretranslate';
+    const status = async () => (await context.request.get(endpoint)).json();
+    const expand = async () => {
+      if (!(await page.locator('#book-translation').evaluate(node => node.open))) await page.locator('.book-translation-summary').click();
+    };
+    await page.goto(url);
+    await page.locator('#book-translation-progress').waitFor();
+    assert.equal(await page.locator('#book-translation-action').isVisible(), false);
+    await expand();
+    await page.locator('#book-translation-action[data-action=start]').waitFor();
+    assert.match(await page.locator('#book-translation-count').textContent(), /0 \/ 80/);
+    await page.locator('#book-translation-action').click();
+    await page.locator('#book-translation[data-state=running]').waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('.translation-chapter').length === 4);
+    assert.match(await page.locator('#book-translation-chapter-count').textContent(), /最多 4 章并行/);
+    await page.waitForFunction(() => document.querySelector('#book-translation-progress').value >= 2);
+    await page.screenshot({ path: path.join(root, 'running-desktop.png'), fullPage: true });
+    await page.locator('#book-translation-action[data-action=pause]').click();
+    await page.locator('#book-translation[data-state=paused]').waitFor();
+    await page.waitForTimeout(700);
+    const paused = await status();
+    await page.reload();
+    await page.locator('#book-translation[data-state=paused]').waitFor();
+    assert.equal((await status()).completed, paused.completed);
+    await expand();
+    await page.screenshot({ path: path.join(root, 'paused-desktop.png'), fullPage: true });
+    await page.locator('#immersive-button').click();
+    await page.waitForFunction(() => document.body.classList.contains('immersive'));
+    assert.equal(await page.locator('#book-translation').isVisible(), false);
+    assert.equal(await page.locator('#show-both').isVisible(), true);
+    await page.locator('#exit-immersive').click();
+    await page.waitForFunction(() => !document.body.classList.contains('immersive'));
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: path.join(root, 'paused-mobile.png'), fullPage: true });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Narrow layout must not overflow');
+    await page.locator('#reader-settings-button').click();
+    await page.locator('.theme-choices [data-theme=green]').click();
+    await page.locator('#close-reading-settings').click();
+    await page.screenshot({ path: path.join(root, 'paused-green.png'), fullPage: true });
+    await page.locator('#book-translation-action[data-action=resume]').click();
+    await page.locator('#book-translation[data-state=running]').waitFor();
+    const beforeClose = (await status()).completed;
+    await page.close();
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    assert.ok((await status()).completed > beforeClose, 'Translation continues with no open page');
+    page = await context.newPage();
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(url);
+    await page.locator('#book-translation[data-state=failed]').waitFor({ timeout: 35000 });
+    await expand();
+    assert.equal((await status()).completed, 79);
+    assert.equal((await status()).failed, 1);
+    assert.ok((await status()).percent < 100);
+    assert.equal(await page.locator('#book-translation-failed').isVisible(), true);
+    await page.screenshot({ path: path.join(root, 'retry-failed.png'), fullPage: true });
+    fs.writeFileSync(path.join(data, 'recovered'), 'ready');
+    await page.locator('#book-translation-action[data-action=retry]').click();
+    await page.locator('#book-translation[data-state=completed]').waitFor({ timeout: 10000 });
+    assert.equal((await status()).percent, 100);
+    await page.reload();
+    await page.locator('#book-translation[data-state=completed]').waitFor();
+    await page.screenshot({ path: path.join(root, 'completed-desktop.png'), fullPage: true });
+    await expand();
+    await page.locator('#book-exports').waitFor({ state: 'visible' });
+    for (const format of ['bilingual', 'translation']) {
+      const downloading = page.waitForEvent('download');
+      await page.locator('#download-' + format).click();
+      const download = await downloading;
+      assert.ok(download.suggestedFilename().endsWith('.epub'));
+      const output = path.join(root, format + '.epub');
+      await download.saveAs(output);
+      assert.equal(fs.readFileSync(output).subarray(0, 2).toString(), 'PK');
+    }
+    assert.deepEqual(errors, []);
+    console.log(JSON.stringify({ ok: true, completed: 80, checks: ['four-parallel-chapters', 'chapter-progress', 'progress', 'pause', 'reload', 'continue', 'closed-page-background', 'failed-count', 'retry-only-missing', 'saved-completion', 'immersive', 'narrow-layout', 'green-theme', 'bilingual-epub-download', 'translated-epub-download'], screenshots: root }));
+  } finally {
+    if (browser) await browser.close();
+    server.kill();
+    await new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve); });
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });

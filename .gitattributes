@@ -1,0 +1,8 @@
+.data/ export-ignore
+books/ export-ignore
+dist/ export-ignore
+test-results/ export-ignore
+*.epub export-ignore
+*.sqlite3 export-ignore
+*.db export-ignore
+.env* export-ignore

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ed"><meta name="description" content="Parallel Reader 本地双语电子书阅读器，逐段对照，让阅读跨越语言。">
+  <title>Parallel · 双语阅读</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/reading.css"><script type="module" src="/app.js"></script>
+</head>
+<body>
+  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M3 4h6l3 3 3-3h6v16h-7l-2 2-2-2H3z"/><path d="M12 7v14"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+    <symbol id="i-grid3" viewBox="0 0 24 24"><rect x="2" y="3" width="5" height="7" rx="1"/><rect x="9.5" y="3" width="5" height="7" rx="1"/><rect x="17" y="3" width="5" height="7" rx="1"/><rect x="2" y="14" width="5" height="7" rx="1"/><rect x="9.5" y="14" width="5" height="7" rx="1"/><rect x="17" y="14" width="5" height="7" rx="1"/></symbol>
+    <symbol id="i-original" viewBox="0 0 24 24"><path d="m5 19 7-14 7 14m-11-5h8"/></symbol>
+    <symbol id="i-translation" viewBox="0 0 24 24"><text x="12" y="19" text-anchor="middle" font-size="20" fill="currentColor" stroke="none">文</text></symbol>
+    <symbol id="i-compare" viewBox="0 0 34 24"><text x="7" y="18" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="currentColor" stroke="none">A</text><path d="M16 3v18"/><text x="26" y="18" text-anchor="middle" font-size="16" fill="currentColor" stroke="none">文</text></symbol>
+    <symbol id="i-follow" viewBox="0 0 24 24"><text x="12" y="10" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="currentColor" stroke="none">A</text><path d="M7 12h10"/><text x="12" y="23" text-anchor="middle" font-size="12" fill="currentColor" stroke="none">文</text></symbol>
+    <symbol id="i-flow-scroll" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="7" rx="1"/><path d="M3 12h18"/><rect x="5" y="15" width="14" height="7" rx="1"/></symbol>
+    <symbol id="i-chapter-prev" viewBox="0 0 24 24"><path d="M5 5v14m13-14-7 7 7 7"/></symbol>
+    <symbol id="i-chapter-next" viewBox="0 0 24 24"><path d="M19 5v14M6 5l7 7-7 7"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8z"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+  </defs></svg>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/" aria-label="Parallel 书架"><span class="brand-icon"><svg><use href="#i-book"/></svg></span><span>parallel<span class="brand-dot">.</span><small>让阅读，跨越语言</small></span></a>
+    <button class="import-button" id="import-button"><svg><use href="#i-plus"/></svg>导入 EPUB</button>
+    <input id="file-input" type="file" accept=".epub,application/epub+zip" hidden>
+    <div class="side-tabs" role="tablist" aria-label="导航"><button id="tab-library" class="active" role="tab" aria-selected="true">我的书架</button><button id="tab-toc" role="tab" aria-selected="false" disabled>章节目录</button></div>
+    <div class="sidebar-content" id="library-panel">
+      <div class="library-view-controls" role="group" aria-label="书架视图">
+        <button id="library-view-list" type="button" title="列表视图" aria-label="列表视图" aria-pressed="false"><svg aria-hidden="true"><use href="#i-list"/></svg></button>
+        <button id="library-view-covers" type="button" title="两列封面" aria-label="两列封面缩略视图" aria-pressed="true"><svg aria-hidden="true"><use href="#i-grid"/></svg></button>
+        <button id="library-view-covers3" type="button" title="三列封面" aria-label="三列封面缩略视图" aria-pressed="false"><svg aria-hidden="true"><use href="#i-grid3"/></svg></button>
+      </div>
+      <div id="library-list" data-view="covers"></div><p class="side-empty" id="side-empty">你的下一段旅程，<br>从一本书开始。</p>
+    </div>
+    <div class="sidebar-content" id="toc-panel" hidden><label class="toc-search"><svg><use href="#i-search"/></svg><input id="toc-search" placeholder="查找章节" aria-label="查找章节"></label><nav id="toc-list" aria-label="章节目录"></nav></div>
+    <div class="sidebar-footer"><div class="local-note"><span class="status-dot"></span>书籍与缓存保存在本机</div><button id="settings-button"><svg><use href="#i-settings"/></svg>阅读设置<svg class="small-arrow"><use href="#i-arrow"/></svg></button></div>
+  </aside>
+  <div class="main-shell">
+    <header class="topbar"><div class="breadcrumb"><button id="sidebar-toggle" class="icon-button" aria-label="切换侧栏" title="切换侧栏"><svg><use href="#i-list"/></svg></button><span class="top-section">阅读空间</span><span class="crumb-divider">/</span><span id="header-title">欢迎来到 Parallel</span></div><div class="toolbar"><button id="model-badge" class="model-badge" title="模型与翻译设置"><span class="status-dot"></span><span>配置模型</span></button><button id="reader-settings-button" class="icon-button" title="阅读设置" aria-label="阅读设置" aria-expanded="false" aria-controls="reading-settings"><svg><use href="#i-settings"/></svg></button><button id="immersive-button" class="icon-button" title="沉浸阅读（Esc 退出）" aria-label="进入沉浸阅读" aria-pressed="false" disabled><svg><use href="#i-expand"/></svg></button></div></header>
+    <section id="reading-settings" class="reading-settings" aria-label="阅读设置菜单" hidden>
+      <div class="settings-menu"><span class="settings-menu-title">阅读设置</span><button id="appearance-tab" class="active" aria-pressed="true">字体与排版</button><button id="model-settings-button">模型与翻译</button><button id="close-reading-settings" class="icon-button" aria-label="收起阅读设置"><svg><use href="#i-close"/></svg></button></div>
+      <div class="reading-theme-row"><div class="theme-choices" role="group" aria-label="阅读背景">
+        <button data-theme="light" aria-label="纸白" title="纸白" aria-pressed="true"><span class="theme-swatch paper-swatch" aria-hidden="true"></span></button>
+        <button data-theme="green" aria-label="护眼绿" title="护眼绿" aria-pressed="false"><span class="theme-swatch green-swatch" aria-hidden="true"></span></button>
+        <button data-theme="yellow" aria-label="羊皮纸黄" title="羊皮纸黄" aria-pressed="false"><span class="theme-swatch yellow-swatch" aria-hidden="true"></span></button>
+        <button data-theme="deep-green" aria-label="深绿黑字" title="深绿黑字" aria-pressed="false"><span class="theme-swatch deep-green-swatch" aria-hidden="true"></span></button>
+        <button data-theme="dark" aria-label="黑底白字" title="黑底白字" aria-pressed="false"><span class="theme-swatch dark-swatch" aria-hidden="true"></span></button>
+      </div></div>
+      <div id="appearance-panel" class="appearance-panel">
+        <fieldset><legend>EN <span>英文原文</span></legend><label>字号 <input id="en-size" type="range" min="14" max="32" step="1"><output id="en-size-value"></output></label><label>字体 <select id="en-font"><option value="georgia">Georgia · 衬线</option><option value="times">Times New Roman</option><option value="sans">Segoe UI · 无衬线</option></select></label><label>字重 <select id="en-weight"><option value="400">常规</option><option value="500">中等</option><option value="600">半粗</option><option value="700">加粗</option></select></label><label>行距 <input id="en-line" type="range" min="1.4" max="2.4" step="0.1"><output id="en-line-value"></output></label></fieldset>
+        <fieldset><legend>中 <span>中文译文</span></legend><label>字号 <input id="zh-size" type="range" min="14" max="32" step="1"><output id="zh-size-value"></output></label><label>字体 <select id="zh-font"><option value="song">宋体 · 衬线</option><option value="yahei">黑体 · 无衬线</option><option value="kai">楷体</option></select></label><label>字重 <select id="zh-weight"><option value="400">常规</option><option value="500">中等</option><option value="600">半粗</option><option value="700">加粗</option></select></label><label>行距 <input id="zh-line" type="range" min="1.4" max="2.4" step="0.1"><output id="zh-line-value"></output></label></fieldset>
+      </div><div class="reading-options"><button id="prefetch-toggle" class="subtle-button" title="暂停或继续自动预翻译"><svg><use href="#i-pause"/></svg><span>自动预翻译</span></button></div><div class="appearance-note"><span>调整实时生效，自动保存到本机。</span><button id="reset-appearance">恢复默认排版</button></div>
+    </section>
+    <main id="welcome" class="welcome">
+      <div class="welcome-eyebrow"><span class="line"></span> A LITTLE CLOSER TO EVERY WORD</div>
+      <h1>读懂文字，<br>也读懂<span>字里行间。</span></h1><p class="welcome-description">一本原著，两种语言。<br>让每一段故事，都有自然流畅的回应。</p>
+      <div class="welcome-actions"><button class="primary" id="welcome-import"><svg><use href="#i-upload"/></svg>导入你的第一本书</button><button class="text-button" id="sample-button" hidden>导入示例 EPUB <svg><use href="#i-arrow"/></svg></button></div>
+      <div class="welcome-demo" aria-hidden="true"><div class="demo-column"><div class="demo-label">ORIGINAL · 英文原文</div><p>A good book is a conversation.<br>Every page brings us a little closer.</p></div><div class="demo-column"><div class="demo-label">TRANSLATION · 中文译文</div><p>一本好书，是一场对话。<br>每翻一页，我们就靠近一点。</p></div><div class="demo-caption"><svg><use href="#i-spark"/></svg>段落对照 · 语境翻译 · 提前就绪</div></div>
+      <div class="welcome-bottom"><span>EPUB 格式</span><span>本地书架</span><span>你的模型，你的阅读节奏</span></div>
+    </main>
+    <main id="reader" class="reader" hidden>
+      <div class="book-heading"><div><div class="eyebrow" id="book-author"></div><h1 id="book-title"></h1></div></div>
+      <details id="book-translation" class="book-translation" aria-label="整本书预翻译">
+        <summary class="book-translation-summary" aria-label="展开或收起整本预翻译详情" title="整本翻译进度 · 点击展开详情"><progress id="book-translation-progress" value="0" max="100" aria-label="整本翻译进度"></progress><svg class="bulk-chevron"><use href="#i-arrow"/></svg></summary>
+        <div class="book-translation-expanded">
+        <div class="book-translation-heading"><span class="book-translation-title"><svg><use href="#i-book"/></svg>整本预翻译 <span id="book-translation-state" role="status">正在读取</span></span><button id="book-translation-action" class="secondary" disabled>整本预翻译</button></div>
+        <div class="book-translation-progress"><span id="book-translation-count">—</span></div>
+        <div class="book-translation-details"><span id="book-translation-model"></span><span id="book-translation-failed" hidden></span></div>
+        <div class="book-translation-chapters"><span id="book-translation-chapter-count"></span><div id="book-translation-active" aria-label="正在并行翻译的章节"></div></div>
+        <p id="book-translation-note">已完成的段落自动保存，继续时跳过已有译文。</p>
+        <section class="book-reproof" aria-label="全书重新校对">
+          <div class="book-reproof-heading"><span>全书重新校对 <small id="book-reproof-state" role="status"></small></span><button id="book-reproof-action" class="secondary" disabled>全书重新校对</button></div>
+          <div id="book-reproof-details" hidden><progress id="book-reproof-progress" value="0" max="100" aria-label="本轮全书校对进度"></progress><span id="book-reproof-count"></span></div>
+          <p id="book-reproof-note">整本翻译完成后，可用当前校对模型重新检查全书。</p>
+        </section>
+        <div id="book-exports" class="book-exports" hidden><span>EPUB 已自动保存</span><a id="download-bilingual" class="secondary" download>下载双语 EPUB</a><a id="download-translation" class="secondary" download>下载译文 EPUB</a></div>
+        </div>
+      </details>
+      <div class="column-labels">
+        <div class="reading-mode-controls">
+          <div class="column-switch" role="group" aria-label="显示内容">
+            <button id="show-original" aria-label="单列原文" title="原文 · 单列英文"><svg aria-hidden="true"><use href="#i-original"/></svg></button>
+            <button id="show-translation" aria-label="单列中文" title="中文 · 单列译文"><svg aria-hidden="true"><use href="#i-translation"/></svg></button>
+            <button id="show-both" class="show-both" aria-label="双列对照" title="双列 · 中英左右对照"><svg aria-hidden="true"><use href="#i-compare"/></svg></button>
+            <button id="show-follow" aria-label="单列跟随" title="跟随 · 译文紧跟原文"><svg aria-hidden="true"><use href="#i-follow"/></svg></button>
+          </div>
+          <div class="flow-switch" role="group" aria-label="阅读方式"><button id="flow-pages" aria-label="翻页阅读" title="翻页阅读" aria-pressed="true"><svg aria-hidden="true"><use href="#i-book"/></svg></button><button id="flow-scroll" aria-label="连续滚动阅读" title="连续滚动阅读" aria-pressed="false"><svg aria-hidden="true"><use href="#i-flow-scroll"/></svg></button></div>
+        </div>
+        <button id="exit-immersive" class="exit-immersive" aria-label="退出沉浸阅读" title="退出沉浸阅读（Esc）" hidden><svg><use href="#i-close"/></svg><span>退出沉浸</span></button>
+      </div>
+      <div id="paragraphs" class="paragraphs" aria-label="双语段落对照"></div>
+      <p id="scroll-status" class="scroll-status" role="status" hidden></p>
+      <span id="sentence-hint" role="status" hidden></span>
+    </main>
+    <footer id="reading-footer" class="reading-footer" hidden><div class="prefetch-summary" hidden><span class="status-dot" id="prefetch-dot"></span><span id="prefetch-text">准备翻译</span><div id="prefetch-pages" class="prefetch-pages" aria-label="前后两页预加载状态"></div></div><div class="pagination" role="group" aria-label="阅读导航"><button id="bookmark-button" class="icon-button bookmark-button" aria-label="在当前页添加书签" title="在当前页添加书签" aria-pressed="false"><svg aria-hidden="true"><use href="#i-bookmark"/></svg></button><button id="prev-chapter" class="chapter-nav" aria-label="上一章" title="上一章"><svg aria-hidden="true"><use href="#i-chapter-prev"/></svg></button><button id="prev-page" class="icon-button" aria-label="上一页" title="上一页（←）"><svg class="rotate"><use href="#i-arrow"/></svg></button><label class="page-position"><input id="page-input" type="number" min="1" aria-label="跳转页码"><span id="page-total"></span></label><button id="next-page" class="icon-button" aria-label="下一页" title="下一页（→）"><svg><use href="#i-arrow"/></svg></button><button id="next-chapter" class="chapter-nav" aria-label="下一章" title="下一章"><svg aria-hidden="true"><use href="#i-chapter-next"/></svg></button></div><div class="progress-group"><span id="progress-text"></span><progress id="reading-progress" max="100" value="0" aria-label="阅读进度"></progress></div></footer>
+  </div>
+  <div id="immersive-navigation" class="immersive-navigation" aria-label="沉浸阅读翻页" hidden><button id="immersive-prev" aria-label="上一页" title="上一页（←）"><svg class="rotate"><use href="#i-arrow"/></svg></button><button id="immersive-next" aria-label="下一页" title="下一页（→）"><svg><use href="#i-arrow"/></svg></button></div>
+  <dialog id="settings-dialog"><form id="settings-form">
+<div class="dialog-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h2>翻译服务设置</h2></div><button type="button" class="icon-button close-dialog" aria-label="关闭设置"><svg><use href="#i-close"/></svg></button></div>
+<label>翻译服务<select name="translationProvider" id="translation-provider"><option value="llm">大模型（LLM）</option><option value="microsoft">微软翻译（免配置）</option><option value="azure">Azure Translator API（自备 Key）</option></select></label>
+<label>翻译语言<select name="targetLanguage"><option>简体中文</option><option>繁體中文</option><option>日本語</option></select></label>
+<div id="llm-provider-settings">
+<p class="dialog-description">连接兼容接口，使用上下文翻译并可启用独立模型校对。</p>
+<label>API 地址<input name="baseUrl" type="url" required placeholder="请输入翻译接口地址"><small>兼容 OpenAI 的接口，包含 /v1</small></label>
+<label>模型名称<input name="model" required placeholder="请输入模型名称"></label>
+<label>API Key <span class="optional">可选</span><input name="apiKey" type="password" autocomplete="off" placeholder="按服务要求填写"><small id="api-key-hint">仅保存在本机，由本机服务向所配置的接口发送。</small></label>
+<label class="checkbox-label"><input name="clearApiKey" type="checkbox">清除已保存的 API Key</label>
+<label class="checkbox-label"><input name="reviewEnabled" type="checkbox">启用第二模型校对</label>
+<details class="review-settings"><summary>校对模型设置</summary>
+<label>校对 API 地址<input name="reviewBaseUrl" type="url" required placeholder="请输入校对接口地址"></label>
+<label>校对模型名称<input name="reviewModel" required placeholder="请输入校对模型名称"></label>
+<label>校对 API Key <span class="optional">可选</span><input name="reviewApiKey" type="password" autocomplete="off"></label>
+<label class="checkbox-label"><input name="clearReviewApiKey" type="checkbox">清除已保存的校对 API Key</label></details>
+<details class="review-settings"><summary>独立查词模型（可选）</summary><p>同时留空时使用翻译模型。查词只参考当前句和前面最多十句。</p>
+<label>查词 API 地址<input name="wordBaseUrl" type="url" placeholder="请输入查词接口地址"></label><label>查词模型名称<input name="wordModel" placeholder="请输入查词模型名称"></label>
+<label>查词 API Key <span class="optional">可选</span><input name="wordApiKey" type="password" autocomplete="off"></label>
+<label class="checkbox-label"><input name="clearWordApiKey" type="checkbox">清除已保存的查词 API Key</label></details>
+</div>
+<div id="azure-provider-settings" hidden>
+<p class="dialog-description">使用 Azure Translator Text API 翻译正文。自动识别原文语言；不调用大模型进行校对、语境查词或图片翻译，插图保留原图。</p>
+<label>Azure Endpoint<input name="azureEndpoint" type="url" placeholder="从 Azure 资源的 Keys and Endpoint 页面复制"><small>支持全局服务或自定义资源 Endpoint。</small></label>
+<label>Azure Translator Key<input name="azureApiKey" type="password" autocomplete="off"><small>只保存在本机 .data 中，不会返回到浏览器或进入公开发布包。</small></label>
+<label class="checkbox-label"><input name="clearAzureApiKey" type="checkbox">清除已保存的 Azure Key</label>
+<label>Azure Region <span class="optional">全局资源可选</span><input name="azureRegion" placeholder="区域资源请填写对应 Region"><small>区域资源／多服务资源需要填写；全局资源可留空。</small></label>
+</div>
+<div id="microsoft-provider-settings" hidden><p class="dialog-description">无需 Azure 账号、Key 或模型地址，联网即可使用微软网页翻译。临时会话自动获取，仅保存在内存中。图片保留原图；此模式不提供大模型校对或语境查词。网页服务可能调整或限流，失败时可切换其他服务。</p></div>
+<p id="connection-result" class="connection-result" role="status"></p><div class="dialog-actions"><button id="test-model" type="button" class="secondary">测试连接</button><button type="submit" class="primary">保存设置</button></div>
+</form></dialog>
+  <aside id="word-popover" class="word-popover" role="dialog" aria-modal="false" aria-labelledby="word-title" hidden><div class="word-popover-heading"><h2 id="word-title"></h2><button id="close-word" class="icon-button" aria-label="关闭单词解释"><svg><use href="#i-close"/></svg></button></div><div class="word-meta"><span id="word-lemma"></span><span id="word-pos" class="word-pos" hidden></span></div><p id="word-status" role="status"></p><div id="word-definitions" aria-live="polite" hidden><section class="word-definition"><h3>基本词义</h3><p id="word-basic"></p></section><section class="word-definition contextual-definition"><h3>文中含义</h3><p id="word-meaning"></p></section><p id="word-note"></p></div><button id="retry-word" class="secondary" hidden>重新查询</button><small id="word-context">仅参考当前句和之前最多 10 句</small></aside>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="drop-overlay" class="drop-overlay" hidden><svg><use href="#i-upload"/></svg><h2>把故事放在这里</h2><p>松开鼠标，导入 EPUB</p></div>
+</body>
+</html>

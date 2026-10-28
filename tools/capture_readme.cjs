@@ -37,6 +37,7 @@ const {chromium}=require(path.join(process.env.PARALLEL_NODE_MODULES,'playwright
    else if(ep==='/api/books/'+book.id)value=book;
    else if(ep.endsWith('/reproofread'))value={jobs:[]};
    else if(ep.endsWith('/pretranslate'))value=task;
+   else if(ep.endsWith('/translation-sources'))value={configurationProfile:profile,selectedProfile:profile,selectionRequired:false,sources:[]};
    else if(ep.endsWith('/window'))value={profile};
    else if(ep.endsWith('/progress'))value={ok:true};
    else if(ep.endsWith('/status'))value={profile,items,pages:book.pages.map(p=>({page:p.id,ready:3,total:3})),bookTranslation:task};

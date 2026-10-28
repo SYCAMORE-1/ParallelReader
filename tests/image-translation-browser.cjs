@@ -21,6 +21,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
     let imageState = { state: 'idle' }, posts = 0, failNext = false, firstGet = true, releaseGet;
     await context.route('**/api/**', async route => {
       const request = route.request(), endpoint = new URL(request.url()).pathname;
+      if (endpoint.endsWith('/translation-sources')) return route.fulfill({contentType:'application/json',body:JSON.stringify({configurationProfile:profile,selectedProfile:profile,selectionRequired:false,sources:[]})});
       if (endpoint.endsWith('/images/' + asset) || endpoint.endsWith('/translated-images/' + asset)) return route.fulfill({ contentType: 'image/svg+xml',
         body: '<svg xmlns="http://www.w3.org/2000/svg" width="1388" height="2000"><rect width="1388" height="2000" fill="white"/><text x="80" y="160" font-size="80">Sunglasses</text></svg>' });
       let value;

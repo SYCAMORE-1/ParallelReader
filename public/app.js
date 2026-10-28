@@ -1,6 +1,7 @@
 import { ReadingTools, readingTop } from './reading-tools.js';
 import { ReproofTools } from './reproof-tools.js';
 import { ImageTranslationTools } from './image-translation.js';
+import { TranslationSources } from './translation-sources.js';
 history.scrollRestoration = 'manual';
 const $ = (selector) => document.querySelector(selector);
 const state = { book: null, page: 0, selected: null, profile: '', settings: {}, library: [], items: {}, cache: new Map(), epoch: 0, timer: null, prefetch: localStorage.getItem('parallel.prefetch') !== 'false', windowChain: Promise.resolve(), progressChain: Promise.resolve() };
@@ -33,6 +34,16 @@ function bookUrl(suffix = '') { return '/api/books/' + state.book.id + suffix; }
 const reading = new ReadingTools({ state, api, icon, element, selectParagraph, updateParagraph, openModel: showSettings });
 const reproof = new ReproofTools({ state, api, toast, report, reading, refresh: () => { clearTimeout(state.timer); poll(state.epoch); } });
 const imageTranslation = new ImageTranslationTools({ state, api, element });
+const translationSources = new TranslationSources({ state, api });
+$('#translation-source-button').onclick = async () => {
+  if (!state.book) return;
+  ++state.epoch; clearTimeout(state.timer);
+  try {
+    if (await translationSources.resolve(state.book, {force: true})) {
+      state.items = {}; reading.resetPage(); reproof.reset(); renderPage(); renderBookTranslation(); scheduleWindow();
+    }
+  } catch (error) { report(error); }
+};
 let flow = localStorage.getItem('parallel.flow') === 'scroll' ? 'scroll' : 'pages';
 let renderStart = 0, renderEnd = 0, pageBackward = false, scrollFrame = 0, progressTimer, lastScrollY = 0, scrollRestoring = false;
 function syncFlow() {
@@ -111,7 +122,7 @@ function addPage(index, prepend = false) {
     const original = element('div', 'original'); original.lang = state.book.language || 'en'; original.title = '单击句子对照；双击单词查看语境释义';
     const translation = element('div', 'translation placeholder'); translation.lang = state.settings.targetLanguage === '日本語' ? 'ja' : 'zh';
     row.append(original, translation); fragment.append(row);
-    const cached = state.cache.get(`${state.book.id}:${state.profile}:${pid}`); if (cached) state.items[pid] = cached;
+    const cached = state.cache.get(`${state.book.id}:${state.readingProfile || state.profile}:${pid}`); if (cached) state.items[pid] = cached;
   }
   if (prepend) $('#paragraphs').prepend(fragment); else $('#paragraphs').append(fragment);
   for (const pid of page.paragraphs) updateParagraph(pid);
@@ -168,7 +179,7 @@ document.addEventListener('reading-layout-change', refreshLayout);
 window.addEventListener('resize', refreshLayout);
 function checkScroll() {
   scrollFrame = 0;
-  if (flow !== 'scroll' || !state.book || scrollRestoring) return;
+  if (flow !== 'scroll' || !state.book || scrollRestoring || state.readingChoicePending) return;
   const container = $('#paragraphs'), top = $('.column-labels').getBoundingClientRect().bottom + 12;
   let changed = false;
   // In normal reading, returning to the book header takes priority over loading
@@ -376,11 +387,13 @@ $('#toc-search').oninput = renderToc;
 
 async function openBook(id, provided, { atBookmark = false } = {}) {
   const epoch = ++state.epoch; clearTimeout(state.timer);
+  state.readingChoicePending = true; state.readingProfile = state.profile;
   const book = provided || await api('/api/books/' + id);
   if (epoch !== state.epoch || removingBooks.has(id) || !state.library.some(item => item.id === id)) return;
   const bookmarkPage = book.bookmark?.page;
   const targetPage = atBookmark && Number.isInteger(bookmarkPage) && bookmarkPage >= 0 && bookmarkPage < book.pages.length ? bookmarkPage : book.currentPage || 0;
   state.book = book; state.page = targetPage; state.selected = null; state.items = {}; reading.resetPage();
+  $('#translation-source-button').hidden = false; $('#translation-source-button').textContent = '正在读取本地译文…';
   reproof.reset();
   ++bulkRevision; bookTranslation = null; renderBookTranslation();
   localStorage.setItem('parallel.lastBook', book.id);
@@ -388,12 +401,18 @@ async function openBook(id, provided, { atBookmark = false } = {}) {
   $('#immersive-button').disabled = false;
   $('#header-title').textContent = book.title; $('#book-title').textContent = book.title; $('#book-author').textContent = book.author;
   document.title = book.title + ' · Parallel';
-  renderLibrary(); setTab('toc'); renderPage();
+  renderLibrary(); setTab('toc');
+  $('#paragraphs').replaceChildren(); renderStart = renderEnd = state.page; renderPageChrome();
   document.body.classList.remove('mobile-sidebar');
   if (book.warnings?.length) toast(`已导入；${book.warnings.length} 个章节无法解析，详细信息见书籍数据。`);
-  if (flow === 'pages') scrollToReadingPage();
-  if (atBookmark) { goBookmark(targetPage); saveProgress(); }
-  scheduleWindow();
+  try {
+    if (await translationSources.resolve(book, {epoch})) {
+      state.items = {}; reading.resetPage(); renderPage();
+      if (flow === 'pages') scrollToReadingPage();
+      if (atBookmark) { goBookmark(targetPage); saveProgress(); }
+      scheduleWindow();
+    }
+  } catch (error) { report(error); }
 }
 
 function renderPageChrome() {
@@ -498,7 +517,7 @@ function selectParagraph(pid, retry = false) {
 }
 
 function scheduleWindow(selected = null, retry = false) {
-  if (!state.book) return;
+  if (!state.book || state.readingChoicePending) return;
   const epoch = state.epoch, book = state.book, page = state.page, endPage = windowEnd(), enabled = state.prefetch;
   clearTimeout(state.timer);
   // Serialize mutations so rapid navigation cannot restore an older window.
@@ -507,19 +526,23 @@ function scheduleWindow(selected = null, retry = false) {
     const result = await api('/api/books/' + book.id + '/window', { page, endPage, selected, retry, enabled });
     if (epoch !== state.epoch) return;
     state.profile = result.profile;
+    if (result.needsTranslationChoice) { await translationSources.resolve(book, {epoch}); if (epoch === state.epoch) scheduleWindow(selected, retry); return; }
     await poll(epoch);
   }).catch(error => { if (epoch === state.epoch) { report(error); $('#prefetch-text').textContent = '连接中断，5 秒后重试'; state.timer = setTimeout(() => scheduleWindow(selected, retry), 5000); } });
 }
 async function poll(epoch) {
-  if (epoch !== state.epoch || !state.book) return;
+  if (epoch !== state.epoch || !state.book || state.readingChoicePending) return;
   const revision = bulkRevision;
   try {
     const result = await api(bookUrl('/status?page=' + state.page + '&endPage=' + windowEnd()));
     if (epoch !== state.epoch) return;
+    if (result.needsTranslationChoice) { await translationSources.resolve(state.book, {epoch}); if (epoch === state.epoch) scheduleWindow(); return; }
     const restoreAnchor = reproof.anchorBeforeUpdate(result.items);
-    state.profile = result.profile; Object.assign(state.items, result.items);
+    state.profile = result.profile; state.readingProfile = result.readingProfile || state.readingProfile || result.profile;
+    if (result.readingTranslation) translationSources.update(result.readingTranslation);
+    Object.assign(state.items, result.items);
     for (const [pid, item] of Object.entries(result.items)) {
-      if (item.state === 'ready') state.cache.set(`${state.book.id}:${state.profile}:${pid}`, item);
+      if (item.state === 'ready') state.cache.set(`${state.book.id}:${state.readingProfile}:${pid}`, item);
       updateParagraph(pid);
     }
     restoreAnchor();
@@ -548,7 +571,7 @@ function updateStatus(result) {
   }
 }
 function goPage(page, backward = false) {
-  if (!state.book || !Number.isFinite(page)) return;
+  if (!state.book || !Number.isFinite(page) || state.readingChoicePending) return;
   page = Math.max(0, Math.min(Math.trunc(page), state.book.pages.length - 1));
   if (page === state.page) { $('#page-input').value = page + 1; return; }
   state.page = page; state.selected = null; state.items = {}; ++state.epoch; clearTimeout(state.timer); reading.resetPage();
@@ -564,6 +587,7 @@ function goChapter(offset) {
   goChapterEntry(chapter);
 }
 function goChapterEntry(chapter) {
+  if (state.readingChoicePending) return;
   goPage(chapter.startPage);
   const epoch = state.epoch, book = state.book.id;
   requestAnimationFrame(() => {
@@ -635,12 +659,12 @@ function renderBookTranslation() {
     failed: '成功译文已保存。重试仅翻译缺失的段落，不会重复翻译已完成内容。'
   };
   $('#book-translation-note').textContent = task ? (task.reason || (task.reviewEnabled && task.state !== 'completed' ? '先初译再校对，通过检查后保存最终译文。已有初译会复用；校对失败保留初译。' : '') + notes[task.state]) : '正在读取本机翻译进度…';
-  $('#book-exports').hidden = task?.state !== 'completed';
+  $('#book-exports').hidden = task?.state !== 'completed' && !(translationSources.value?.book === state.book?.id && translationSources.value?.completed === state.book?.paragraphs.length);
   if (state.book) for (const format of ['bilingual', 'translation']) $('#download-' + format).href = bookUrl('/export?format=' + format);
   renderBookReproof();
 }
 function renderBookReproof() {
-  const textOnly = ['azure', 'microsoft'].includes(state.settings.translationProvider);
+  const textOnly = ['azure', 'microsoft'].includes(state.settings.translationProvider) || state.readingProfile && state.readingProfile !== state.profile;
   $('#book-reproof-action').hidden = textOnly; $('#book-reproof-state').hidden = textOnly;
   if (textOnly) { $('#book-reproof-details').hidden = true; return; }
   const job = reproof.jobs.find(job => job.scope === 'book');
@@ -723,6 +747,7 @@ async function showSettings() {
     const settings = await api('/api/settings'); state.settings = settings;
     const form = $('#settings-form'); for (const key of ['baseUrl', 'model', 'targetLanguage', 'apiKey', 'reviewBaseUrl', 'reviewModel', 'reviewApiKey', 'wordBaseUrl', 'wordModel', 'wordApiKey', 'azureEndpoint', 'azureApiKey', 'azureRegion']) form.elements[key].value = settings[key] || '';
     form.elements.translationProvider.value = settings.translationProvider || 'llm';
+    form.elements.wordProvider.value = settings.wordProvider || 'microsoft';
     form.dataset.hasAzureKey = String(!!settings.hasAzureApiKey);
     form.elements.clearAzureApiKey.checked = false;
     form.elements.azureApiKey.placeholder = settings.hasAzureApiKey ? '已保存，留空以保留' : '请输入 Azure Translator Key';
@@ -739,7 +764,7 @@ async function showSettings() {
 function syncModelRequirements() {
   const form = $('#settings-form'), provider = form.elements.translationProvider.value, azure = provider === 'azure', llm = provider === 'llm';
   $('#microsoft-provider-settings').hidden = provider !== 'microsoft';
-  for (const [id, active] of [['llm-provider-settings', llm], ['azure-provider-settings', azure]]) {
+  for (const [id, active] of [['llm-provider-settings', llm], ['azure-provider-settings', azure], ['word-provider-settings', form.elements.wordProvider.value === 'llm']]) {
     const group = $('#' + id); group.hidden = !active;
     for (const control of group.querySelectorAll('input, select')) control.disabled = !active;
   }
@@ -751,6 +776,7 @@ function syncModelRequirements() {
 }
 $('#settings-form').elements.reviewEnabled.addEventListener('change', syncModelRequirements);
 $('#translation-provider').addEventListener('change', syncModelRequirements);
+$('#word-provider').addEventListener('change', syncModelRequirements);
 $('#model-badge').onclick = showSettings;
 for (const button of document.querySelectorAll('.close-dialog')) button.onclick = () => button.closest('dialog').close();
 for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('click', event => { const r = dialog.getBoundingClientRect(); if (event.target === dialog && (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom)) dialog.close(); });
@@ -763,12 +789,18 @@ $('#test-model').onclick = async () => {
 };
 $('#settings-form').onsubmit = async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
+  let saved = false;
   try {
+    const preferred = state.readingProfile;
+    state.readingChoicePending = true; ++state.epoch; clearTimeout(state.timer);
     await api('/api/settings', formSettings()); state.settings = await api('/api/settings'); state.profile = state.settings.profile;
+    saved = true;
     ++bulkRevision; reproof.reset(); bookTranslation = null; renderBookTranslation();
-    state.cache.clear(); state.items = {}; applySettings(); $('#settings-dialog').close(); toast('已保存，译文缓存将按模型和语言分别管理');
-    if (state.book) { ++state.epoch; clearTimeout(state.timer); reading.resetPage(); renderPage(); scheduleWindow(); }
-  } catch (error) { report(error); }
+    state.cache.clear(); state.items = {}; applySettings(); $('#settings-dialog').close(); toast('翻译配置已保存，已有译文保留');
+    if (state.book) {
+      if (await translationSources.resolve(state.book, {preferred})) { reading.resetPage(); renderPage(); renderBookTranslation(); scheduleWindow(); }
+    } else state.readingChoicePending = false;
+  } catch (error) { if (!saved) { state.readingChoicePending = false; scheduleWindow(); } report(error); }
   finally { button.disabled = false; }
 };
 function applySettings() {

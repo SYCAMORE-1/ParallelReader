@@ -39,7 +39,7 @@ export class ReproofTools {
   reset() { this.hide(); this.jobs = []; }
 
   open(event) {
-    if (['azure', 'microsoft'].includes(this.state.settings.translationProvider)) return;
+    if (['azure', 'microsoft'].includes(this.state.settings.translationProvider) || this.state.readingProfile && this.state.readingProfile !== this.state.profile) return;
     if (!this.state.book) return;
     const chapterNode = event.target.closest?.('.toc-item[data-chapter]');
     const sentence = event.target.closest?.('.original .sentence[data-side="source"]');

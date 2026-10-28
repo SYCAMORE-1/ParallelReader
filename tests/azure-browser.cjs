@@ -40,6 +40,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
       else if (ep === '/api/sample') value = { available: false };
       else if (ep === '/api/library-progress') value = { profile: settings.profile, books: { [book.id]: task() } };
       else if (ep.endsWith('/reproofread')) value = { jobs: [] };
+      else if (ep.endsWith('/translation-sources')) value = { book: book.id, configurationProfile: settings.profile, selectedProfile: settings.profile, selectionRequired: false, completed: 1, total: 1, sources: [] };
       else if (ep.endsWith('/pretranslate')) value = task();
       else if (ep.endsWith('/window')) value = { profile: settings.profile };
       else if (ep.endsWith('/progress')) value = { ok: true };

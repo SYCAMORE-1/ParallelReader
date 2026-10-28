@@ -787,8 +787,11 @@ class Translator:
                         priority = -1 if pid == selected else distance * 1000 + (index - page if distance == 0 else 0) * 100 + order
                         if enabled or pid == selected:
                             candidates.append((priority, pid))
-            cached = self.store.translations(book["id"], ids, fingerprint)
+            from reader.reading_sources import translations as reading_translations
+            source_state, cached = reading_translations(self.store, book, ids, settings)
             for priority, pid in candidates:
+                if source_state['selectionRequired']:
+                    break
                 key = (book["id"], pid, fingerprint)
                 if pid in cached:
                     continue
@@ -809,13 +812,14 @@ class Translator:
         drafted = self.store.drafted_paragraphs(book['id'], profile(draft_settings(settings))) if review_enabled(settings) else set()
         window_pages = [i for i in range(page - 2, end_page + 3) if 0 <= i < len(book["pages"])]
         ids = [pid for i in window_pages for pid in book["pages"][i]["paragraphs"]]
-        cached = self.store.translations(book["id"], ids, fingerprint)
+        from reader.reading_sources import translations as reading_translations
+        source_state, cached = reading_translations(self.store, book, ids, settings)
         with self.condition:
             items = {}
             for pid in ids:
                 key = (book["id"], pid, fingerprint)
                 if pid in cached:
-                    items[pid] = {"state": "ready", "text": cached[pid]}
+                    items[pid] = {"state": "ready", "text": cached[pid]['text'], 'translationProfile': cached[pid]['profile']}
                 elif key in self.active:
                     items[pid] = {"state": "translating", "stage": "proofreading" if pid in drafted else "translation"}
                 elif key in self.errors:
@@ -827,7 +831,7 @@ class Translator:
                 for task in revision.get('chapters', [revision]):
                     if task['activeParagraph'] in items:
                         items[task['activeParagraph']]['reproofreading'] = task['state']
-        return {"profile": fingerprint, "items": items, "pages": [{"page": i, "ready": sum(pid in cached for pid in book["pages"][i]["paragraphs"]), "total": len(book["pages"][i]["paragraphs"])} for i in window_pages], 'bookTranslation': self.bulk_status(book), 'reproofreading': revisions}
+        return {"profile": fingerprint, 'readingProfile': source_state['selectedProfile'], 'needsTranslationChoice': source_state['selectionRequired'], "items": items, "pages": [{"page": i, "ready": sum(pid in cached for pid in book["pages"][i]["paragraphs"]), "total": len(book["pages"][i]["paragraphs"])} for i in window_pages], 'bookTranslation': self.bulk_status(book), 'reproofreading': revisions}
 
     def _take_work(self):
         # Page changes replace only foreground work. Whole-book work remains

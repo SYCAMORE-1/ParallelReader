@@ -155,13 +155,20 @@ class BookExporter:
         self.thread = threading.Thread(target=self.run, name='epub-export', daemon=True)
         self.thread.start()
 
-    def export(self, book, settings, kind='bilingual'):
+    def export(self, book, settings, kind='bilingual', reading=False):
         if kind not in {'bilingual', 'translation'}:
             raise ValueError('不支持的 EPUB 格式')
         fingerprint = profile(settings)
         with self.lock:
             ids = [paragraph['id'] for paragraph in book['paragraphs']]
             translations = self.store.translations(book['id'], ids, fingerprint)
+            if reading:
+                from reader.reading_sources import translations as reading_translations
+                source, saved = reading_translations(self.store, book, ids, settings)
+                if source['selectionRequired']:
+                    raise ValueError('请先选择要阅读和导出的译文')
+                fingerprint = source['selectedProfile']
+                translations = {pid: item['text'] for pid, item in saved.items()}
             if any(not translations.get(pid, '').strip() for pid in ids):
                 raise ValueError('整本翻译尚未完成，请等待所有段落就绪后再下载 EPUB')
             translated, image_digests = {}, {}

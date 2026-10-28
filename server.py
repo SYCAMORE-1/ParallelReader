@@ -26,6 +26,9 @@ def validate_settings(value, previous):
     provider = value.get('translationProvider', previous.get('translationProvider', 'llm'))
     if provider not in {'llm', 'azure', 'microsoft'}:
         raise ValueError('请选择支持的翻译服务')
+    word_provider = value.get('wordProvider', previous.get('wordProvider', 'microsoft'))
+    if word_provider not in {'microsoft', 'llm'}:
+        raise ValueError('请选择支持的单词翻译服务')
     base = str(value.get("baseUrl", previous["baseUrl"])).strip().rstrip("/")
     url = urlparse(base)
     if (provider == 'llm' or base) and (url.scheme not in ("http", "https") or not url.hostname or url.username or url.password or url.query or url.fragment):
@@ -63,7 +66,7 @@ def validate_settings(value, previous):
         raise ValueError('请填写 Azure Translator Key')
     if len(azure_region) > 80 or any(not (c.isascii() and (c.isalnum() or c == '-')) for c in azure_region):
         raise ValueError('请输入有效的 Azure Region，全球资源可留空')
-    return {"translationProvider": provider, "azureEndpoint": azure_endpoint, "azureApiKey": azure_key, "azureRegion": azure_region,
+    return {"translationProvider": provider, 'wordProvider': word_provider, "azureEndpoint": azure_endpoint, "azureApiKey": azure_key, "azureRegion": azure_region,
             "baseUrl": base, "model": model, "targetLanguage": language, "apiKey": "" if value.get("clearApiKey") else (str(value.get("apiKey", "")).strip() or previous.get("apiKey", "")),
             'reviewEnabled': review_enabled, 'reviewBaseUrl': review_base, 'reviewModel': review_model,
             'reviewApiKey': '' if value.get('clearReviewApiKey') else (str(value.get('reviewApiKey', '')).strip() or previous.get('reviewApiKey', '')),
@@ -194,9 +197,12 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                     book = store.book(parts[2])
                     if len(parts) == 3:
                         return self.respond(book)
+                    if parts[3] == 'translation-sources':
+                        from reader.reading_sources import progress
+                        return self.respond(progress(store, book, store.settings()))
                     if parts[3] == 'export':
                         kind = parse_qs(parsed.query).get('format', ['bilingual'])[0]
-                        path = self.server.exporter.export(book, store.settings(), kind)
+                        path = self.server.exporter.export(book, store.settings(), kind, reading=True)
                         data = path.read_bytes()
                         title = book['title'] + ('-双语对照.epub' if kind == 'bilingual' else '-译文.epub')
                         self.send_response(200)
@@ -226,13 +232,16 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                         settings = store.settings()
                         for pid, item in status['items'].items():
                             if item['state'] == 'ready':
-                                item.update(language.view(book, pid, item['text'], settings))
+                                item.update(language.view(book, pid, item['text'], settings, item.get('translationProfile')))
+                        from reader.reading_sources import progress
+                        status['readingTranslation'] = progress(store, book, settings)
                         return self.respond(status)
                 if parsed.path.startswith("/api/"):
                     return self.respond({"error": "接口不存在"}, 404)
                 allowed = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/reading-tools.js": "reading-tools.js", "/style.css": "style.css", "/reading.css": "reading.css", "/favicon.svg": "favicon.svg"}
                 allowed['/reproof-tools.js'] = 'reproof-tools.js'
                 allowed['/image-translation.js'] = 'image-translation.js'
+                allowed['/translation-sources.js'] = 'translation-sources.js'
                 for name in ('reader-song.woff2', 'reader-sans.woff2', 'reader-kai.woff2', 'song-OFL.txt', 'sans-OFL.txt', 'kai-OFL.txt', 'NOTICE.json'):
                     allowed['/fonts/' + name] = 'fonts/' + name
                 filename = allowed.get(parsed.path)
@@ -303,7 +312,7 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                         if settings['reviewModel'] not in review_models:
                             raise ValueError('校对接口可连，但未找到此模型。可用模型：' + ', '.join(review_models))
                     word_models = []
-                    if settings.get('wordBaseUrl') and settings.get('wordModel'):
+                    if settings.get('wordProvider') == 'llm' and settings.get('wordBaseUrl') and settings.get('wordModel'):
                         result = request_json(settings['wordBaseUrl'] + '/models', api_key=settings.get('wordApiKey', ''), timeout=12)
                         word_models = [m['id'] for m in result.get('data', [])]
                         if settings['wordModel'] not in word_models:
@@ -313,6 +322,13 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                     return self.respond(image_translator.request(store.book(parts[2]), parts[4], value.get('retry', False)), 202)
                 if parts[:2] == ["api", "books"] and len(parts) == 4:
                     book = store.book(parts[2])
+                    if parts[3] == 'translation-sources':
+                        from reader.reading_sources import choose
+                        with translator.condition:
+                            result = choose(store, book, store.settings(), value.get('sourceProfile'), value.get('configurationProfile'))
+                            translator.desired.clear(); translator.heap.clear()
+                            translator.condition.notify_all()
+                        return self.respond(result)
                     if parts[3] == 'remove':
                         translator.remove_book(book['id'])
                         image_translator.remove_book(book['id'])
@@ -330,10 +346,11 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                         settings = store.settings()
                         if parts[3] == 'word':
                             return self.respond(language.explain(book, pid, value.get('word'), settings, offset=value.get('offset')))
-                        translated = store.translation(book['id'], pid, profile(settings))
-                        if translated is None:
+                        from reader.reading_sources import translations as reading_translations
+                        _, saved = reading_translations(store, book, [pid], settings)
+                        if pid not in saved:
                             raise ValueError('请先等待此段落的译文就绪')
-                        return self.respond(language.align(book, pid, translated, settings))
+                        return self.respond(language.align(book, pid, saved[pid]['text'], settings, saved[pid]['profile']))
                     page = int(value.get("page", 0))
                     if not 0 <= page < len(book["pages"]):
                         raise ValueError("页码超出范围")
@@ -349,7 +366,8 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                         if selected is not None and (type(selected) is not int or selected not in visible_ids):
                             raise ValueError("所选段落不在当前页")
                         fingerprint = translator.window(book, page, selected, bool(value.get("retry")), bool(value.get("enabled", True)), end_page=end_page)
-                        return self.respond({"profile": fingerprint})
+                        from reader.reading_sources import selection
+                        return self.respond({"profile": fingerprint, 'needsTranslationChoice': selection(store, book, store.settings())['selectionRequired']})
                 self.respond({"error": "接口不存在"}, 404)
             except KeyError:
                 self.respond({"error": "书籍不存在"}, 404)

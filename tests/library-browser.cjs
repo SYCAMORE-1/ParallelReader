@@ -17,6 +17,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
     await context.addInitScript(() => { localStorage.setItem('parallel.prefetch', 'false'); localStorage.setItem('parallel.theme', 'green'); });
     await context.route('**/api/**', async route => {
       const request = route.request(), endpoint = new URL(request.url()).pathname;
+      if (endpoint.endsWith('/translation-sources')) return route.fulfill({contentType:'application/json',body:JSON.stringify({configurationProfile:profile,selectedProfile:profile,selectionRequired:false,sources:[]})});
       if (endpoint.includes('/images/') && request.method() === 'GET') return route.continue();
       const id = endpoint.split('/')[3], summary = books.find(book => book.id === id);
       let value, status = 200;

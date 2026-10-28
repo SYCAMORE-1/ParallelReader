@@ -21,6 +21,7 @@ const { chromium } = require(modules ? path.join(modules, 'playwright') : 'playw
   await context.addInitScript(() => localStorage.setItem('parallel.prefetch', 'false'));
   await context.route('**/api/**', async route => {
     const request = route.request(), endpoint = new URL(request.url()).pathname;
+    if (endpoint.endsWith('/translation-sources')) return route.fulfill({contentType:'application/json',body:JSON.stringify({configurationProfile:settings.profile,selectedProfile:settings.profile,selectionRequired:false,sources:[]})});
     let value;
     if (endpoint === '/api/settings') {
       if (request.method() === 'POST') { saved = request.postDataJSON(); settings = { ...settings, ...saved }; }
@@ -54,7 +55,7 @@ const { chromium } = require(modules ? path.join(modules, 'playwright') : 'playw
     await page.locator('#settings-dialog').waitFor({ state: 'visible' });
     const form = page.locator('#settings-form');
     assert.equal(await form.locator('[name=reviewEnabled]').isChecked(), true);
-    await page.locator('.review-settings summary').click();
+    await page.locator('#llm-provider-settings .review-settings summary').click();
     assert.equal(await form.locator('[name=reviewModel]').inputValue(), 'Qwen/Qwen3.8-27B-FP8');
     assert.equal(await form.locator('[name=reviewApiKey]').inputValue(), '');
     assert.match(await form.locator('[name=reviewApiKey]').getAttribute('placeholder'), /已保存/);

@@ -16,6 +16,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
     await context.addInitScript(() => localStorage.setItem('parallel.prefetch', 'false'));
     await context.route('**/api/**', async route => {
       const request = route.request(), endpoint = new URL(request.url()).pathname;
+      if (endpoint.endsWith('/translation-sources')) return route.fulfill({contentType:'application/json',body:JSON.stringify({configurationProfile:profile,selectedProfile:profile,selectionRequired:false,sources:[]})});
       let value;
       if (endpoint === '/api/settings') value = { model: 'QA', profile, reviewEnabled: true, targetLanguage: '简体中文' };
       else if (endpoint === '/api/books') value = books.map((book, id) => ({ ...book, translationProgress: id === 0 ? shelf() : baseProgress }));

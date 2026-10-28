@@ -123,13 +123,14 @@ class MicrosoftTranslator:
             self.session = parse_session(page, url, time.monotonic())
             return dict(self.session)
 
-    def one(self, text, language):
+    def request(self, path, fields):
+        if path not in {'/ttranslatev3', '/tlookupv3'}:
+            raise ValueError('不支持的微软翻译接口')
         with self.slots:
             for attempt in range(2):
                 session = self.authentication()
-                url = session['url'] + '?' + urllib.parse.urlencode({'isVertical': '1', 'IG': session['ig'], 'IID': session['iid']})
-                body = urllib.parse.urlencode({'fromLang': 'auto-detect', 'to': language, 'text': text,
-                                              'key': session['key'], 'token': session['token']}).encode()
+                url = session['url'].rsplit('/', 1)[0] + path + '?' + urllib.parse.urlencode({'isVertical': '1', 'IG': session['ig'], 'IID': session['iid']})
+                body = urllib.parse.urlencode({**fields, 'key': session['key'], 'token': session['token']}).encode()
                 request = urllib.request.Request(url, data=body, headers={'User-Agent': USER_AGENT,
                     'Referer': PAGE, 'Content-Type': 'application/x-www-form-urlencoded'}, method='POST')
                 raw, _ = self.fetch(request)
@@ -142,11 +143,19 @@ class MicrosoftTranslator:
                     continue
                 if code is not None and code != 200:
                     raise RuntimeError('微软翻译请求未成功，请稍后重试或切换服务')
-                entries = value[0].get('translations') if isinstance(value, list) and value and isinstance(value[0], dict) else None
-                target = next((entry.get('text') for entry in entries if isinstance(entry, dict) and entry.get('to') == language), None) if isinstance(entries, list) else None
-                if not isinstance(target, str) or not target.strip():
-                    raise RuntimeError('微软翻译没有返回有效译文，请重试')
-                return target
+                return value
+
+    def one(self, text, language):
+        value = self.request('/ttranslatev3', {'fromLang': 'auto-detect', 'to': language, 'text': text})
+        entries = value[0].get('translations') if isinstance(value, list) and value and isinstance(value[0], dict) else None
+        target = next((entry.get('text') for entry in entries if isinstance(entry, dict) and entry.get('to') == language), None) if isinstance(entries, list) else None
+        if not isinstance(target, str) or not target.strip():
+            raise RuntimeError('微软翻译没有返回有效译文，请重试')
+        return target
+
+    def dictionary(self, word, language):
+        value = self.request('/tlookupv3', {'from': 'en', 'to': language, 'text': word})
+        return value if isinstance(value, list) else []
 
     def translate(self, settings, texts):
         language = LANGUAGES[settings['targetLanguage']]

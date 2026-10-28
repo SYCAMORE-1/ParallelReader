@@ -47,6 +47,7 @@ const { chromium } = require(modules ? path.join(modules, 'playwright') : 'playw
   await context.addInitScript(() => localStorage.setItem('parallel.prefetch', 'false'));
   await context.route('**/api/**', async route => {
     const request = route.request(), endpoint = new URL(request.url()).pathname;
+    if (endpoint.endsWith('/translation-sources')) return route.fulfill({contentType:'application/json',body:JSON.stringify({configurationProfile:profile,selectedProfile:profile,selectionRequired:false,sources:[]})});
     let value;
     if (endpoint === '/api/settings') value = { baseUrl: 'http://127.0.0.1:1/v1', model: 'QA-model', apiKey: '', targetLanguage: '简体中文', profile };
     else if (endpoint === '/api/books') value = [{ id: book.id, title: book.title, author: book.author, cover: null, currentPage, pageCount: book.pages.length }];
@@ -189,7 +190,7 @@ const { chromium } = require(modules ? path.join(modules, 'playwright') : 'playw
     await page.locator('#word-definitions').waitFor({ state: 'visible' });
     assert.equal(wordQueries.length, 1);
     assert.equal(wordQueries[0].word, 'paused');
-    assert.equal(wordQueries[0].offset, 6);
+    assert.equal(wordQueries[0].offset, book.paragraphs[0].text.indexOf('paused'));
     assert.equal(await page.locator('#word-pos').textContent(), 'v.');
     assert.match(await page.locator('#word-context').textContent(), /当前句.*前 0 句.*不读取后文/);
     const dictionaryFonts = await page.evaluate(() => ['#word-basic', '#word-meaning', '#word-pos', '#word-note'].map(selector => parseFloat(getComputedStyle(document.querySelector(selector)).fontSize)));

@@ -20,7 +20,7 @@ class LanguageTests(unittest.TestCase):
         self.store = Store(self.temp.name)
         self.book = queue_book()
         self.book['paragraphs'][3]['text'] = 'Dr. Jones waited. He had arrived. Then he left.'
-        self.settings = self.store.settings() | {'baseUrl': 'https://translation.example.invalid/v1', 'model': 'translation-model',
+        self.settings = self.store.settings() | {'wordProvider': 'llm', 'baseUrl': 'https://translation.example.invalid/v1', 'model': 'translation-model',
                     'wordBaseUrl': 'https://words.example.invalid/v1', 'wordModel': 'word-model', 'wordApiKey': ''}
 
     def tearDown(self):

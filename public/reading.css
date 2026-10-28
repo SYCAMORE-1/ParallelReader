@@ -465,3 +465,10 @@ body:not(.immersive) .reader{padding-top:14px}
 #library-list[data-view="covers3"] .library-progress{gap:3px}
 #library-list[data-view="covers3"] .library-percent{min-width:0;font-size:10px}
 .library-context-menu #library-remove{color:var(--error)}
+.translation-source-button{max-width:100%;font-size:13px;padding:5px 10px;white-space:nowrap}
+.book-heading{flex-wrap:wrap;gap:8px}
+#translation-source-dialog{max-width:min(560px,calc(100vw - 32px));padding:24px}
+#translation-source-dialog p{font-size:15px;line-height:1.7}
+#translation-source-dialog label{display:grid;gap:8px;margin:16px 0;font-size:14px}
+#translation-source-select{width:100%;max-width:100%;font-size:14px;padding:10px}
+#translation-source-dialog .dialog-actions{flex-wrap:wrap;gap:8px}

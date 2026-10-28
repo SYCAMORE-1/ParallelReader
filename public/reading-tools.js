@@ -294,7 +294,7 @@ export class ReadingTools {
         if (job.epoch !== this.state.epoch) continue;
         this.activeJob = job;
         try {
-          const result = await this.api(`/api/books/${job.book}/align`, { paragraph: job.pid });
+          const result = await this.api(`/api/books/${job.book}/align`, { paragraph: job.pid, translationProfile: this.state.items[job.pid]?.translationProfile });
           this.alignments.set(job.key, result);
           if (job.epoch !== this.state.epoch || this.state.profile !== job.profile || this.state.items[job.pid]?.text !== job.text) continue;
           Object.assign(this.state.items[job.pid], result);
@@ -354,7 +354,7 @@ export class ReadingTools {
     this.word = { pid, word, x, y, offset }; $('#word-popover').hidden = false;
     $('#word-title').textContent = word; $('#word-lemma').textContent = ''; $('#word-pos').hidden = true;
     $('#word-definitions').hidden = true; $('#word-status').hidden = false;
-    $('#word-status').textContent = '正在查询基本词义，并结合前文解释…';
+    $('#word-status').textContent = this.state.settings.wordProvider === 'llm' ? '正在查询基本词义，并结合前文解释…' : '正在使用微软免配置查词…';
     $('#word-basic').textContent = ''; $('#word-meaning').textContent = ''; $('#word-note').textContent = ''; $('#retry-word').hidden = true;
     $('#word-context').textContent = '仅参考当前句和之前最多 10 句';
     $('#word-popover').classList.remove('word-error'); this.positionWord();
@@ -362,11 +362,13 @@ export class ReadingTools {
       const result = await this.api(`/api/books/${this.state.book.id}/word`, { paragraph: pid, word, offset });
       if (request !== this.wordRequest || epoch !== this.state.epoch) return;
       $('#word-lemma').textContent = result.lemma.toLowerCase() !== word.toLowerCase() ? '原形 ' + result.lemma : '';
-      $('#word-pos').textContent = result.partOfSpeech; $('#word-pos').hidden = false;
+      $('#word-pos').textContent = result.partOfSpeech; $('#word-pos').hidden = !result.partOfSpeech;
+      $('#word-pos').title = result.provider === 'microsoft' ? '词典常见词性' : '当前用法的词性';
+      document.querySelector('.contextual-definition h3').textContent = result.provider === 'microsoft' ? result.contextKind === 'sentence' ? '所在句译文' : '文中译法' : '文中含义';
       $('#word-basic').textContent = result.basicMeaning; $('#word-meaning').textContent = result.contextMeaning;
       $('#word-note').textContent = result.note; $('#word-note').hidden = !result.note;
       $('#word-status').hidden = true; $('#word-definitions').hidden = false;
-      $('#word-context').textContent = result.contextWindow ? `当前句 + 前 ${result.contextWindow.before} 句 · 不读取后文` : '仅参考当前句和之前最多 10 句';
+      $('#word-context').textContent = (result.provider === 'microsoft' ? '微软免配置 · ' : '') + (result.contextWindow ? `当前句 + 前 ${result.contextWindow.before} 句 · 不读取后文` : '仅参考当前句和之前最多 10 句');
       this.positionWord();
     } catch (error) {
       if (request !== this.wordRequest || epoch !== this.state.epoch) return;

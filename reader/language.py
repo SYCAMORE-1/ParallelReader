@@ -21,7 +21,7 @@ def word_settings(settings):
     separate = bool(settings.get('wordBaseUrl') and settings.get('wordModel'))
     return {**settings, 'baseUrl': settings['wordBaseUrl'] if separate else settings['baseUrl'],
             'model': settings['wordModel'] if separate else settings['model'],
-            'apiKey': settings.get('wordApiKey', '') if separate else settings.get('apiKey', ''), 'reviewEnabled': False}
+            'apiKey': settings.get('wordApiKey', '') if separate else settings.get('apiKey', ''), 'reviewEnabled': False, 'translationProvider': 'llm'}
 PARTS_OF_SPEECH = ['n.', 'v.', 'adj.', 'adv.', 'pron.', 'prep.', 'conj.', 'det.', 'art.', 'aux.', 'modal v.', 'interj.', 'num.', 'abbr.', 'prop. n.', 'phr.']
 
 
@@ -91,8 +91,8 @@ class LanguageTools:
             with self.lock:
                 self.inflight.pop(key, None)
 
-    def view(self, book, pid, text, settings):
-        detail = self.store.translation_detail(book['id'], pid, profile(settings))
+    def view(self, book, pid, text, settings, translation_profile=None):
+        detail = self.store.translation_detail(book['id'], pid, translation_profile or profile(settings))
         if detail and detail.get('text') == text and ''.join(detail.get('sourceSentences', [])) == book['paragraphs'][pid]['text']:
             return {key: detail[key] for key in ['sourceSentences', 'targetSentences', 'alignment', 'alignmentMethod']}
         source = split_sentences(book['paragraphs'][pid]['text'])
@@ -102,8 +102,8 @@ class LanguageTools:
             groups = [{'source': list(range(len(source))), 'target': list(range(len(target)))}]
         return {'sourceSentences': source, 'targetSentences': target, 'alignment': groups}
 
-    def align(self, book, pid, text, settings):
-        view = self.view(book, pid, text, settings)
+    def align(self, book, pid, text, settings, translation_profile=None):
+        view = self.view(book, pid, text, settings, translation_profile)
         if view['alignment'] is not None:
             return view
         from reader.providers import text_only
@@ -133,11 +133,6 @@ class LanguageTools:
         return view
 
     def explain(self, book, pid, word, settings, offset=None):
-        from reader.providers import text_only
-        if text_only(settings):
-            raise ValueError('语境查词需要大模型；Azure 模式／微软免配置模式仅提供正文翻译')
-        # Word explanations have their own small model and cache identity.
-        settings = word_settings(settings)
         if not isinstance(word, str) or len(word) > 80 or WORD.fullmatch(word) is None:
             raise ValueError('请双击一个英文单词')
         paragraph = book['paragraphs'][pid]['text']
@@ -148,6 +143,16 @@ class LanguageTools:
             offset = matches[0].start()
         elif type(offset) is not int or not any(match.start() == offset for match in matches):
             raise ValueError('所选单词的位置无效，请重新双击')
+        if settings.get('wordProvider', 'microsoft') == 'microsoft':
+            from reader.microsoft_dictionary import VERSION as WORD_VERSION, explain as microsoft_explain
+            identity = [WORD_VERSION, book['id'], pid, word.casefold(), offset, settings['targetLanguage']]
+            key = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
+            result = self.cached_call(key, lambda: microsoft_explain(book, pid, word, settings, offset))
+            return {'word': word, **result, 'meaning': result['contextMeaning']}
+        # Explicit LLM lookup remains independent of the paragraph provider.
+        settings = word_settings(settings)
+        if not settings.get('baseUrl') or not settings.get('model'):
+            raise ValueError('请配置查词模型，或改用微软免配置查词')
         window = sentence_window(book, pid, offset, radius=10, following_radius=0)
         context = {name: window[name] for name in ['sentence', 'previousSentences']}
         term_note = terminology_note(word, settings['targetLanguage'])

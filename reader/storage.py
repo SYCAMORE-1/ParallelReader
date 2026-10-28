@@ -22,6 +22,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS bookmarks (book TEXT PRIMARY KEY, page INTEGER, manual INTEGER, updated REAL);
             CREATE TABLE IF NOT EXISTS translations (book TEXT, paragraph INTEGER, profile TEXT, text TEXT, created REAL, PRIMARY KEY(book, paragraph, profile));
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE IF NOT EXISTS translation_profiles (profile TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE IF NOT EXISTS reading_sources (book TEXT, configuration TEXT, source TEXT, updated REAL, PRIMARY KEY(book, configuration));
             CREATE TABLE IF NOT EXISTS language_cache (key TEXT PRIMARY KEY, value TEXT, created REAL);
             CREATE TABLE IF NOT EXISTS translation_details (book TEXT, paragraph INTEGER, profile TEXT, value TEXT, PRIMARY KEY(book, paragraph, profile));
             CREATE TABLE IF NOT EXISTS translation_drafts (book TEXT, paragraph INTEGER, profile TEXT, value TEXT, created REAL, PRIMARY KEY(book, paragraph, profile));
@@ -33,6 +35,7 @@ class Store:
             INSERT OR IGNORE INTO bookmarks SELECT id,page,0,updated FROM books;
         """)
         self.db.commit()
+        self.register_translation_profiles(self.settings())
 
     def save_source(self, book_id, data):
         if hashlib.sha256(data).hexdigest()[:24] != book_id:
@@ -192,12 +195,23 @@ class Store:
         defaults = {"baseUrl": "", "model": "", "apiKey": "", "targetLanguage": "简体中文",
                     "reviewEnabled": True, "reviewBaseUrl": "", "reviewModel": "", "reviewApiKey": "",
                     "wordBaseUrl": "", "wordModel": "", "wordApiKey": "",
-                    "translationProvider": "llm", "azureEndpoint": "", "azureApiKey": "", "azureRegion": ""}
+                    "translationProvider": "llm", "azureEndpoint": "", "azureApiKey": "", "azureRegion": "", "wordProvider": "microsoft"}
         return defaults | (json.loads(row[0]) if row else {})
 
     def save_settings(self, value):
         with self.lock, self.db:
             self.db.execute("INSERT OR REPLACE INTO settings VALUES ('model',?)", (json.dumps(value, ensure_ascii=False),))
+        self.register_translation_profiles(self.settings())
+
+    def register_translation_profiles(self, settings):
+        from reader.translation import profile, draft_settings
+        from reader.providers import service_name
+        with self.lock, self.db:
+            for values in [settings, draft_settings(settings)]:
+                metadata = {'provider': values.get('translationProvider', 'llm'), 'model': service_name(values),
+                            'targetLanguage': values['targetLanguage'], 'reviewEnabled': bool(values.get('reviewEnabled'))}
+                self.db.execute('INSERT OR REPLACE INTO translation_profiles VALUES (?,?)',
+                                (profile(values), json.dumps(metadata, ensure_ascii=False)))
 
     def translation(self, book, paragraph, profile):
         with self.lock:

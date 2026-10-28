@@ -162,7 +162,12 @@ class AzureTests(unittest.TestCase):
         worker = Translator(self.store, workers=1); self.workers.append(worker)
         with patch('reader.translation.request_json', side_effect=AssertionError('LLM must not be called')):
             with self.assertRaisesRegex(ValueError, 'Azure 模式'): worker.reproof.request(self.book, {'scope': 'book'})
-            with self.assertRaisesRegex(ValueError, 'Azure 模式'): LanguageTools(self.store).explain(self.book, 0, 'hello', self.settings)
+            import re
+            word = re.search('[A-Za-z]+', self.book['paragraphs'][0]['text'])[0]
+            answer = {'lemma': word, 'partOfSpeech': 'n.', 'basicMeaning': '测试', 'contextMeaning': '语境测试', 'provider': 'microsoft'}
+            with patch('reader.microsoft_dictionary.explain', return_value=answer) as lookup:
+                self.assertEqual(LanguageTools(self.store).explain(self.book, 0, word, self.settings)['provider'], 'microsoft')
+                lookup.assert_called_once()
 
     def test_private_transfer_strips_azure_key_and_keeps_source(self):
         destination = Path(self.temp.name) / 'transfer' / '.data'

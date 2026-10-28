@@ -10,7 +10,7 @@ A portable bilingual EPUB reader with context-aware translation, proofreading, a
 **Version / 版本：** `v0.1.0-beta`  
 **Platform / 平台：** Windows 10 / 11 x64
 
-![Parallel Reader — Bilingual Reading / 双语对照阅读](docs/screenshots/reader.png)
+![Parallel Reader — Bilingual Reading / 双语对照阅读](./download.png)
 
 ---
 

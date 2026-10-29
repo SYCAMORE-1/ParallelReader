@@ -74,7 +74,7 @@ def build(destination, include_data=False, make_zip=False):
     log('Copying application sources and resources...')
     for name in ['reader', 'public', 'tools', 'tests', 'docs']:
         shutil.copytree(ROOT / name, destination / name, ignore=SKIP)
-    for name in ['server.py', 'start.bat', 'start-mobile.bat', 'start-tailscale.bat', 'start.ps1', 'pack-books.bat', 'restore-books.bat', 'README.md', 'requirements.txt', '.gitignore', '.gitattributes']:
+    for name in ['server.py', 'start.bat', 'start-mobile.bat', 'start-tailscale.bat', 'start.ps1', 'pack-books.bat', 'restore-books.bat', 'README.md', 'AGENTS.md', 'HANDOFF.md', 'requirements.txt', '.gitignore', '.gitattributes']:
         shutil.copy2(ROOT / name, destination / name)
     font_path = destination / 'public' / 'fonts' / 'reader-sans.ttf'
     if not font_path.is_file():

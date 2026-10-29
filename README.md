@@ -8,6 +8,10 @@ A portable bilingual EPUB reader with contextual translation, proofreading, and 
 
 ![Parallel Reader — Bilingual Reading / 双语对照阅读](docs/screenshots/reader.png)
 
+**New computer / agent handoff:** start with [HANDOFF.md](HANDOFF.md). It covers a fresh clone, startup and checks, private-library restoration, and official Tailscale downloads/setup for personal iPhone access. [AGENTS.md](AGENTS.md) points coding agents to this guide.
+
+**新电脑 / Agent 接手：**先阅读 [HANDOFF.md](HANDOFF.md)，其中包含 clone 后运行和验证、私人书库恢复，以及 Tailscale 官方下载和 iPhone 配置流程。[AGENTS.md](AGENTS.md) 提供 agent 入口。
+
 ## English
 
 ### Features

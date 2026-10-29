@@ -10,11 +10,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import deque
-from reader.translation_rules import RULES_VERSION, RuleViolation, finish_translation, is_literal_reference, person_names, phonetic_code_gloss, translation_plan
+from reader.translation_rules import RULES_VERSION, RuleViolation, finish_translation, paragraph_plan, person_names, phonetic_code_gloss, translation_plan
 from reader.text import paragraph_context, sentence_window
 from reader.reproof import Reproofreader
 from reader.terminology import TERMINOLOGY_VERSION, OPERATOR_SENSES, terminology_note, terminology_shots, operator_units, operator_mistranslation, HANDLER_VERSION, HANDLER_SENSES, handler_units, handler_mistranslation
-from reader.repetition import REPETITION_NOTE, repetition_shots
+from reader.repetition import REPETITION_NOTE, repetition_feedback, repetition_issue, repetition_shots
 from reader.glossary import GLOSSARY_NOTE, glossary_reference, glossary_usage
 from reader.scene_phrases import SCENE_NOTE
 from reader.providers import review_enabled, service_name
@@ -265,7 +265,7 @@ def translate_name_slots(book, pid, settings, plan, piece):
             payload = {**payload, 'messages': [*prompt, {'role': 'user', 'content': '上次分段未通过校验：' + str(exc) + '。请重新返回完整 segments。姓名由程序插入，片段中不写姓名，也不在姓名槽紧邻处保留代替它的他／她／它。'}]}
 
 
-def translate_unit(book, pid, settings, plan, piece, failure=''):
+def translate_unit(book, pid, settings, plan, piece, failure='', comparisons=None):
     """Bounded recovery: focus on one source unit, retaining its real context."""
     tokens = re.findall(r'_+PERSON_\d+__', piece['source'])
     unit_plan = {'source': [piece['source']], 'pieces': [{**piece, 'sentence': 0, 'open': False, 'close': False}], 'tokens': plan['tokens']}
@@ -287,6 +287,8 @@ def translate_unit(book, pid, settings, plan, piece, failure=''):
     reference = {'book': book['title'], 'chapter': book['chapters'][book['paragraphs'][pid]['chapter']]['title'],
                  'paragraph': book['paragraphs'][pid]['text'], 'protected_names': plan['tokens'],
                  'required_token_counts': {token: tokens.count(token) for token in set(tokens)}, **translation_context(book, pid)}
+    if comparisons:
+        reference['other_units_do_not_translate_or_repeat'] = comparisons
     title_note = '，中文职称后置于英文姓名' if chinese_titles(settings['targetLanguage']) else ''
     translation_note = ('外语台词（含俄语、法语、拉丁语）也要译出含义；机构、店铺、地名、行动名称或字母代号需要保留外文时，附上中文译名或释义，不能只返回外文。只有人名标记保持不变。'
                         if chinese_titles(settings['targetLanguage']) else '')
@@ -320,6 +322,8 @@ def translate_unit(book, pid, settings, plan, piece, failure=''):
                                'protected_names': {token: plan['tokens'][token] for token in tokens},
                                'required_token_counts': reference['required_token_counts'],
                                'previous_context': window['previousSentences'], 'following_context': window['followingSentences']}
+            if comparisons:
+                compact_context['other_units_do_not_translate_or_repeat'] = comparisons
             if reference.get('book_glossary'):
                 compact_context['book_glossary'] = reference['book_glossary']
             payload = {**payload, 'temperature': .1, 'response_format': {'type': 'json_object'}, 'messages': [
@@ -332,6 +336,11 @@ def translate_unit(book, pid, settings, plan, piece, failure=''):
             if not isinstance(replacement, str) or not replacement.strip():
                 raise TranslationOutputError('模型返回了空翻译片段，请重试')
             finish_translation(unit_plan, [replacement])
+            if comparisons:
+                repeated = repetition_issue([piece['source']] + [item['source'] for item in comparisons],
+                                            [replacement] + [item['translation'] for item in comparisons])
+                if repeated and 0 in repeated['units']:
+                    raise RuleViolation(repetition_feedback(repeated), 0)
             return replacement
         except ModelHTTPError as exc:
             # Some compatible inference servers fail while applying a string
@@ -347,10 +356,11 @@ def translate_unit(book, pid, settings, plan, piece, failure=''):
 
 def translate_draft(book, pid, settings, store=None):
     text = book["paragraphs"][pid]["text"]
-    if is_literal_reference(text):
-        return finish_translation(translation_plan(text, []), [])
+    plan = paragraph_plan(book, pid, [])
+    if all(piece['fixed'] for piece in plan['pieces']):
+        return finish_translation(plan, [])
     names = person_names(book, pid, settings, request_json, store)
-    plan = translation_plan(text, names)
+    plan = paragraph_plan(book, pid, names)
     pieces = [piece for piece in plan['pieces'] if not piece['fixed']]
     count = len(pieces)
     if not count:
@@ -358,6 +368,7 @@ def translate_draft(book, pid, settings, store=None):
     schema = {"type": "object", "properties": {"translations": {"type": "array", "minItems": count, "maxItems": count, "items": {"type": "string"}}}, "required": ["translations"], "additionalProperties": False}
     payload = {"model": settings["model"], "messages": messages(book, pid, settings, plan), "temperature": 0.1, "max_tokens": min(4096, max(384, len(text) * 2)), "stream": False, "chat_template_kwargs": {"enable_thinking": False}, "response_format": {"type": "json_schema", "json_schema": {"name": "paragraph_translation", "strict": True, "schema": schema}}}
     repaired = set()
+    repetition_repaired = set()
     try:
         result = request_json(settings["baseUrl"].rstrip("/") + "/chat/completions", payload, settings.get("apiKey", ""))
         values = read_model_field(result, 'translations')
@@ -373,11 +384,18 @@ def translate_draft(book, pid, settings, store=None):
         try:
             translated = finish_translation(plan, values)
         except RuleViolation as exc:
-            if any(index in repaired for index in exc.unit_indices):
+            repeating = str(exc).startswith('译文出现原文没有的长段重复')
+            attempted = repetition_repaired if repeating else repaired
+            if any(index in attempted for index in exc.unit_indices):
                 raise
+            pending = set(exc.unit_indices)
             for index in exc.unit_indices:
+                attempted.add(index)
                 repaired.add(index)
-                values[index] = translate_unit(book, pid, settings, plan, pieces[index], failure=str(exc))
+                comparisons = ([{'source': piece['source'], 'translation': values[i]} for i, piece in enumerate(pieces) if i not in pending]
+                               if '重复' in str(exc) else None)
+                values[index] = translate_unit(book, pid, settings, plan, pieces[index], failure=str(exc), comparisons=comparisons)
+                pending.remove(index)
     if len(text) < 80 and len(translated['text']) > max(120, len(text) * 4):
         raise RuntimeError("译文疑似包含额外上下文，请重新翻译")
     return {**translated, 'draftUnits': values, 'styleVersion': STYLE_VERSION, 'terminologyVersion': TERMINOLOGY_VERSION, **glossary_usage(book, pid)}
@@ -393,8 +411,19 @@ def proofreading_shots(language):
     example = {'source_paragraph': ' '.join(source), 'protected_names': {},
                'units': [{'id': i, 'text': text, 'dialogue': False} for i, text in enumerate(source)],
                'draft_translation': '她穿过了桌子。他给了她一只拿行李箱的手。'}
+    fragments = ['There was also the computer they called ', 'Beacon.',
+                 ' Did they need it for the fleet? ', 'Its existence was no secret. ',
+                 'Could they not see what was coming?']
+    fragment_targets = ['还有那台计算机，他们称之为', '信标。', '他们需要用它来控制舰队吗？',
+                        '它的存在并非秘密。', '难道他们看不出即将发生什么吗？']
+    if language == '繁體中文':
+        fragment_targets = ['還有那台計算機，他們稱之為', '信標。', '他們需要用它來控制艦隊嗎？',
+                            '它的存在並非秘密。', '難道他們看不出即將發生什麼嗎？']
+    fragment_example = {'units': [{'id': i, 'text': value, 'dialogue': i == 1} for i, value in enumerate(fragments)]}
     return [{'role': 'user', 'content': 'ICL example only: correct literal mistranslations against the source.\n' + json.dumps(example, ensure_ascii=False)},
-            {'role': 'assistant', 'content': json.dumps({'translations': corrected}, ensure_ascii=False)}]
+            {'role': 'assistant', 'content': json.dumps({'translations': corrected}, ensure_ascii=False)},
+            {'role': 'user', 'content': 'ICL example only: an inline quote splits one sentence across slots. Do not insert an extra connector slot after the quote or shift any later meaning. Translate each units[i].text in its own slot, including the final question.\n' + json.dumps(fragment_example, ensure_ascii=False)},
+            {'role': 'assistant', 'content': json.dumps({'translations': fragment_targets}, ensure_ascii=False)}]
 
 
 def proofread(book, pid, settings, plan, draft):
@@ -476,6 +505,7 @@ def proofread(book, pid, settings, plan, draft):
     reviewer = {**settings, 'baseUrl': settings['reviewBaseUrl'], 'model': settings['reviewModel'], 'apiKey': settings.get('reviewApiKey', '')}
     pieces = [piece for piece in plan['pieces'] if not piece['fixed']]
     repaired = set()
+    repetition_repaired = set()
     while True:
         try:
             wrong_sense = operator_mistranslation(values, operator_ids, senses, pieces, repaired)
@@ -494,11 +524,18 @@ def proofread(book, pid, settings, plan, draft):
             result.update(glossary_usage(book, pid))
             return result
         except RuleViolation as exc:
-            if any(index in repaired for index in exc.unit_indices):
+            repeating = str(exc).startswith('译文出现原文没有的长段重复')
+            attempted = repetition_repaired if repeating else repaired
+            if any(index in attempted for index in exc.unit_indices):
                 raise
+            pending = set(exc.unit_indices)
             for index in exc.unit_indices:
+                attempted.add(index)
                 repaired.add(index)
-                values[index] = translate_unit(book, pid, reviewer, plan, pieces[index], failure=str(exc))
+                comparisons = ([{'source': piece['source'], 'translation': values[i]} for i, piece in enumerate(pieces) if i not in pending]
+                               if '重复' in str(exc) else None)
+                values[index] = translate_unit(book, pid, reviewer, plan, pieces[index], failure=str(exc), comparisons=comparisons)
+                pending.remove(index)
 
 
 def translate(book, pid, settings, store=None):
@@ -507,9 +544,9 @@ def translate(book, pid, settings, store=None):
         return microsoft_translate(book, pid, settings, store)
     if not settings.get('reviewEnabled'):
         return translate_draft(book, pid, settings, store)
-    source = book['paragraphs'][pid]['text']
-    if is_literal_reference(source):
-        return finish_translation(translation_plan(source, []), [])
+    plan = paragraph_plan(book, pid, [])
+    if all(piece['fixed'] for piece in plan['pieces']):
+        return finish_translation(plan, [])
     primary = draft_settings(settings)
     draft_profile = profile(primary)
     draft = store.draft(book['id'], pid, draft_profile) if store else None
@@ -518,7 +555,7 @@ def translate(book, pid, settings, store=None):
         if store:
             # Commit BEFORE review: a reviewer outage must not discard 3.6's work.
             store.cache_draft(book['id'], pid, draft_profile, draft)
-    plan = translation_plan(source, person_names(book, pid, primary, request_json, store))
+    plan = paragraph_plan(book, pid, person_names(book, pid, primary, request_json, store))
     try:
         result = proofread(book, pid, settings, plan, draft)
     except RuntimeError as exc:

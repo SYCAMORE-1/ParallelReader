@@ -148,8 +148,6 @@ class BookExporter:
     """Export all completed books automatically, including books finished before upgrade."""
     def __init__(self, store):
         self.store, self.lock = store, threading.RLock()
-        self.directory = store.directory / 'exports'
-        self.directory.mkdir(exist_ok=True)
         self.stop = threading.Event()
         self.errors = {}
         self.thread = threading.Thread(target=self.run, name='epub-export', daemon=True)
@@ -182,7 +180,9 @@ class BookExporter:
                     image_digests[asset] = result['render']['digest']
             snapshot = {'translations': translations, 'images': book.get('images', {}), 'illustrations': book.get('illustrations', []), 'translatedImages': image_digests}
             digest = hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
-            path = self.directory / f'{book["id"]}-{fingerprint}-{kind}.epub'
+            directory = self.store.book_directory(book) / 'exports'
+            directory.mkdir(exist_ok=True)
+            path = directory / f'{book["id"]}-{fingerprint}-{kind}.epub'
             stamp = path.with_suffix('.json')
             signature = {'version': EXPORT_VERSION, 'digest': digest}
             try:
@@ -204,6 +204,11 @@ class BookExporter:
 
     def run(self):
         while not self.stop.is_set():
+            try:
+                self.store.flush_book_folders()
+                self.errors.pop('book-folders', None)
+            except (OSError, ValueError, RuntimeError) as error:
+                self.errors['book-folders'] = str(error)
             settings = self.store.settings()
             fingerprint = profile(settings)
             for entry in self.store.library():
@@ -223,3 +228,4 @@ class BookExporter:
     def close(self):
         self.stop.set()
         self.thread.join(timeout=10)
+        self.store.flush_book_folders(force=True)

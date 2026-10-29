@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from reader.reproof import review_existing
 from reader.translation import translate
-from reader.translation_rules import finish_translation, is_literal_reference, translation_plan
+from reader.translation_rules import finish_translation, is_literal_reference, paragraph_plan, translation_plan
 from test_reader import queue_book
 
 
@@ -13,6 +13,47 @@ SOURCE = ('“Nuy Dap Ranh,” said Webb, barely above a whisper. At the sound o
 
 
 class ReferenceLiteralTests(unittest.TestCase):
+    def test_country_suffix_domains_are_fixed_but_domain_prose_is_translated(self):
+        for source in ['Example.com.au', 'Example.org.uk/catalog', '1. Example.com.au.']:
+            with self.subTest(source=source):
+                self.assertTrue(is_literal_reference(source))
+                self.assertEqual(finish_translation(translation_plan(source, []), [])['text'], source)
+        for source in ['Example.com.au is the website.', 'The company expanded abroad.']:
+            self.assertFalse(is_literal_reference(source))
+
+    def test_motto_heading_with_explicit_source_gloss_bypasses_models_and_stale_draft(self):
+        settings = {'reviewEnabled': True, 'reviewModel': 'review', 'baseUrl': 'http://unused', 'model': 'primary',
+                    'targetLanguage': '简体中文', 'reviewBaseUrl': 'http://unused'}
+        book = queue_book()
+        book['paragraphs'][0]['text'] = 'Semper Paratus:'
+        book['paragraphs'][1]['text'] = '“Always Ready”; the motto of the unit.'
+        for review in [False, True]:
+            with patch('reader.translation.request_json') as request, patch('reader.translation.person_names') as names:
+                result = translate(book, 0, settings | {'reviewEnabled': review})
+                self.assertEqual(result['text'], 'Semper Paratus:')
+                self.assertEqual(result['sourceSentences'], result['targetSentences'])
+                request.assert_not_called()
+                names.assert_not_called()
+        with patch('reader.reproof.person_names') as names, patch('reader.translation.request_json') as request:
+            result = review_existing(book, 0, settings, {'text': '旧的错误结果', 'detail': None}, None, None)
+            self.assertEqual(result['text'], 'Semper Paratus:')
+            request.assert_not_called()
+            names.assert_not_called()
+        self.assertTrue(any(not p['fixed'] for p in paragraph_plan(book, 1, [])['pieces']))
+
+    def test_motto_exemption_requires_immediate_explicit_gloss_in_same_chapter(self):
+        book = queue_book()
+        book['paragraphs'][0]['text'] = 'Semper Paratus:'
+        for following in ['Always Ready.', '“Always Ready”; the next chapter begins.']:
+            book['paragraphs'][1]['text'] = following
+            self.assertTrue(any(not p['fixed'] for p in paragraph_plan(book, 0, [])['pieces']))
+        book['paragraphs'][1]['text'] = '“Always Ready”; the motto of the unit.'
+        book['paragraphs'][1]['chapter'] = book['paragraphs'][0]['chapter'] + 1
+        self.assertTrue(any(not p['fixed'] for p in paragraph_plan(book, 0, [])['pieces']))
+        book['paragraphs'][1]['chapter'] = book['paragraphs'][0]['chapter']
+        book['paragraphs'][0]['text'] = 'Always Ready:'
+        self.assertTrue(any(not p['fixed'] for p in paragraph_plan(book, 0, [])['pieces']))
+
     def test_bulleted_domains_and_social_handles_keep_exact_source_spelling(self):
         for source in ['• 100deadlyskills.com.', '/TouchstoneBooks @TouchstoneBooks @TouchstoneBooks',
                        '1. example.org.', '• www.example.com.', 'https://example.com/resource?key=value']:

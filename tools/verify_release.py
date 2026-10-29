@@ -36,7 +36,11 @@ def main():
                        for name in ['books', 'translations', 'bookmarks']}
             for book_id, raw in connection.execute('SELECT id,data FROM books'):
                 book = json.loads(raw)
-                if not (ROOT / '.data' / 'sources' / (book_id + '.epub')).is_file():
+                locations = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='book_locations'").fetchone()
+                location = connection.execute('SELECT folder FROM book_locations WHERE book=?', (book_id,)).fetchone() if locations else None
+                source = ROOT / '.data' / 'books' / location[0] / 'original.epub' if location else ROOT / '.data' / 'sources' / (book_id + '.epub')
+                source.resolve().relative_to((ROOT / '.data').resolve())
+                if not source.is_file():
                     raise RuntimeError('Missing original EPUB: ' + book['title'])
             for raw, in connection.execute("SELECT value FROM language_cache WHERE key LIKE 'image-translation:%'"):
                 value = json.loads(raw)

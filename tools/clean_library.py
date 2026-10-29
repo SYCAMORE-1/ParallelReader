@@ -42,16 +42,16 @@ def obsolete_files(root, db):
         value = json.loads(raw)
         name = value.get('render', {}).get('file') if isinstance(value, dict) else None
         if name: referenced.add((root / name.replace('\\', '/')).resolve())
-    images = root / 'translated-images'
-    for path in images.glob('*'):
+    image_paths = list((root / 'translated-images').glob('*')) + list((root / 'books').glob('*/translated-images/*'))
+    for path in image_paths:
         safe_file(root, path)
         if path.is_file() and path.resolve() not in referenced: trash.append(path)
     if any(not path.is_file() for path in referenced):
         raise ValueError('A saved translated image is missing; cleanup stopped')
     books = {row[0] for row in db.execute('SELECT id FROM books')}
     groups = {}
-    exports = root / 'exports'
-    for path in exports.glob('*.epub'):
+    export_paths = list((root / 'exports').glob('*.epub')) + list((root / 'books').glob('*/exports/*.epub'))
+    for path in export_paths:
         safe_file(root, path)
         match = re.fullmatch(r'([a-f0-9]{24})-[a-f0-9]{20}-(bilingual|translation)\.epub', path.name)
         if match and match[1] in books: groups.setdefault((match[1], match[2]), []).append(path)
@@ -66,7 +66,7 @@ def obsolete_files(root, db):
 def clean_library(directory, apply=False, prune_history=False):
     root = Path(directory).resolve()
     database = root / 'reader.sqlite3'
-    if not database.is_file() or not (root / 'sources').is_dir():
+    if not database.is_file() or not any((root / name).is_dir() for name in ['sources', 'books']):
         raise ValueError('Not a reader library directory')
     marker = root / 'maintenance.lock'; backup = root / '.maintenance-backup.sqlite3'
     if marker.exists() or backup.exists(): raise ValueError('An earlier maintenance operation needs inspection')
@@ -76,7 +76,11 @@ def clean_library(directory, apply=False, prune_history=False):
     try:
         if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok': raise ValueError('Database is not healthy')
         for (book_id,) in db.execute('SELECT id FROM books'):
-            source = safe_file(root, root / 'sources' / (book_id + '.epub'))
+            has_locations = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='book_locations'").fetchone()
+            location = db.execute('SELECT folder FROM book_locations WHERE book=?', (book_id,)).fetchone() if has_locations else None
+            source = safe_file(root, root / 'books' / location[0] / 'original.epub' if location else root / 'sources' / (book_id + '.epub'))
+            if location and not source.parent.exists():
+                continue  # This book's folder has deliberately been moved out.
             if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest()[:24] != book_id:
                 raise ValueError('An original EPUB is missing or damaged')
         trash = obsolete_files(root, db)

@@ -198,7 +198,7 @@ def recognize_name_part(book, reference, settings, request, store, chapter_key):
             names.extend(recognize_name_part(book, part, settings, request, store, chapter_key))
     names = clean_person_names(names, reference, hints)
     if store:
-        store.cache_language_result(key, names)
+        store.cache_language_result(key, names, book=book['id'])
     return names
 
 
@@ -220,14 +220,14 @@ def person_names(book, pid, settings, request, store=None):
             names.extend(recognize_name_part(book, reference, settings, request, store, key))
         names = clean_person_names(names, chapter_text, hints)
         if store:
-            store.cache_language_result(key, names)
+            store.cache_language_result(key, names, book=book['id'])
         return names
 
 
 def protect_names(text, names):
     if not names:
         return text, {}
-    pattern = re.compile(r'(?<![A-Za-z])(?:' + '|'.join(re.escape(name) for name in sorted(names, key=len, reverse=True)) + r')(?![A-Za-z])', re.I)
+    pattern = re.compile(r'(?<![A-Za-z0-9_@])(?:' + '|'.join(re.escape(name) for name in sorted(names, key=len, reverse=True)) + r')(?![A-Za-z0-9_])', re.I)
     tokens, by_spelling = {}, {}
     def replace(match):
         original = match[0]
@@ -270,10 +270,18 @@ def dialogue_spans(text):
 def source_glossed_phrase_ranges(text, reference=None):
     """Preserve repeated foreign wording when the source explicitly supplies its gloss."""
     reference = text if reference is None else reference
+    # A glossary may put the original motto in a heading and its explicit
+    # meaning in the following paragraph. Preserve the heading's spelling;
+    # its definition still goes through translation and proofreading.
+    word = r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ’'-]*"
+    heading = re.fullmatch(rf'\s*({word}(?:\s+{word}){{0,5}})\s*[:：]\s*', text)
+    if heading:
+        definition = re.search(re.escape(text.strip()) + r'\s*\n\s*[“"]([^”"\n]{1,120})[”"]\s*[;,，；]?\s*(?:the\s+)?motto\b', reference, re.I)
+        if definition and heading[1].casefold() != definition[1].strip().casefold():
+            return [(0, len(text))]
     cue = r'\b(?:foreign|Oriental|Vietnamese|French|German|Italian|Spanish|Russian|Latin|Arabic|Japanese|Chinese|Greek|Hebrew|Korean|Portuguese)\s+(?:words?|phrases?|expressions?)\b'
     if not re.search(cue, reference, re.I):
         return []
-    word = r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ’'-]*"
     ranges = set()
     for gloss in re.finditer(rf'[“"]({word}(?:\s+{word}){{1,5}})\s*[—–]\s*([A-Za-z][^”"\n]+)[”"]', reference):
         phrase = gloss[1].strip()
@@ -286,6 +294,16 @@ def source_glossed_phrase_ranges(text, reference=None):
     return sorted(ranges)
 
 
+def paragraph_plan(book, pid, names):
+    paragraph = book['paragraphs'][pid]
+    reference = paragraph['text']
+    if pid + 1 < len(book['paragraphs']):
+        following = book['paragraphs'][pid + 1]
+        if following['chapter'] == paragraph['chapter']:
+            reference += '\n' + following['text']
+    return translation_plan(paragraph['text'], names, reference=reference)
+
+
 def translation_plan(text, names, reference=None):
     source = split_sentences(text)
     whole_literal = is_literal_reference(text)
@@ -294,7 +312,7 @@ def translation_plan(text, names, reference=None):
     spans = dialogue_spans(text)
     if not spans:
         spans = [{'start': 0, 'end': len(text), 'speech': False, 'open': False, 'close': False}]
-    name_pattern = re.compile(r'(?<![A-Za-z])(?:' + '|'.join(re.escape(name) for name in sorted(names, key=len, reverse=True)) + r')(?![A-Za-z])', re.I) if names else None
+    name_pattern = re.compile(r'(?<![A-Za-z0-9_@])(?:' + '|'.join(re.escape(name) for name in sorted(names, key=len, reverse=True)) + r')(?![A-Za-z0-9_])', re.I) if names else None
     name_matches = list(name_pattern.finditer(text)) if name_pattern else []
     # Sentence punctuation inside a protected full name (M.A.R. D’Amacourt)
     # must not split it into a different, shorter name absent from lookup.
@@ -347,7 +365,7 @@ def is_literal_reference(text):
     value = text.strip()
     if REDACTION.search(value) and not re.search(r'\w', REDACTION.sub('', value)):
         return True
-    address = r'''(?:https?://|www\.)[^\s]+|(?:[A-Za-z0-9-]+\.)+(?:com|org|net|edu|gov|io)(?:/[^\s]*)?|@[A-Za-z0-9_]+|/[A-Za-z0-9_][A-Za-z0-9_.-]*'''
+    address = r'''(?:https?://|www\.)[^\s]+|(?:[A-Za-z0-9-]+\.)+(?:com|org|net|edu|gov|io)(?:\.[A-Za-z]{2})?(?:/[^\s]*)?|@[A-Za-z0-9_]+|/[A-Za-z0-9_][A-Za-z0-9_.-]*'''
     resource = re.sub(r'^(?:[•·▪●‣◦*\-]|\d+[.)])\s*', '', value).rstrip('.,;:!?，。；：！？')
     if re.fullmatch(rf'(?:{address})(?:\s+(?:{address}))*', resource, re.I):
         return True

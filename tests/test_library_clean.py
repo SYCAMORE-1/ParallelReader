@@ -55,7 +55,7 @@ class LibraryCleanTests(unittest.TestCase):
         store = Store(self.root)
         try:
             with self.assertRaisesRegex(RuntimeError, 'Close the reader'): clean_library(self.root, apply=True, prune_history=True)
-            self.assertTrue(self.old.exists()); self.assertFalse((self.root / 'maintenance.lock').exists())
+            self.assertTrue((store.book_directory(self.book) / 'exports' / self.old.name).exists()); self.assertFalse((self.root / 'maintenance.lock').exists())
         finally: store.db.close()
 
     def test_paths_and_existing_maintenance_marker_are_protected(self):

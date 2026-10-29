@@ -33,7 +33,7 @@ class ImageWorkflowTests(unittest.TestCase):
             plan = translation_plan(p['text'], [])
             detail = finish_translation(plan, ['原有译文。'] * sum(not piece['fixed'] for piece in plan['pieces']))
             self.store.cache(self.book['id'], p['id'], self.fp, detail['text'], detail)
-        self.original = (self.store.directory / 'sources' / (self.book['id'] + '.epub')).read_bytes()
+        self.original = self.store.source_path(self.book).read_bytes()
 
     def read(self, *args):
         self.calls.append(('review' if len(args) == 6 else 'initial', args[1]))
@@ -71,7 +71,7 @@ class ImageWorkflowTests(unittest.TestCase):
         value = self.worker.bulk_status(self.book)
         self.assertEqual(value['imageCompleted'], 2); self.assertEqual(value['percent'], 100)
         self.assertEqual(len(self.calls), 4)
-        self.assertEqual((self.store.directory / 'sources' / (self.book['id'] + '.epub')).read_bytes(), self.original)
+        self.assertEqual(self.store.source_path(self.book).read_bytes(), self.original)
 
     def test_retry_failure_really_retries_and_keeps_success(self):
         self.fail = True; self.images.book_jobs.action(self.book, 'start')

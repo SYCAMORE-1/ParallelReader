@@ -135,7 +135,7 @@ class ExportTests(unittest.TestCase):
         self.complete()
         self.exporter.close()
         self.exporter = BookExporter(self.store)
-        until(lambda: len(list(self.exporter.directory.glob('*.epub'))) == 2)
+        until(lambda: len(list((self.store.book_directory(self.book) / 'exports').glob('*.epub'))) == 2)
         self.assertFalse(self.exporter.errors)
 
     def test_interrupted_metadata_write_is_recovered(self):
@@ -180,7 +180,7 @@ class ExportHttpTests(unittest.TestCase):
                     self.assertEqual(response.headers.get_content_type(), 'application/epub+zip')
                     self.assertIn("filename*=UTF-8''", response.headers['Content-Disposition'])
                     self.assertTrue(zipfile.is_zipfile(BytesIO(response.read())))
-                self.assertTrue(list(app.exporter.directory.glob('*-bilingual.epub')))
+                self.assertTrue(list((app.store.book_directory('queue-test') / 'exports').glob('*-bilingual.epub')))
                 request = urllib.request.Request(base + '/window', json.dumps({'page': 2, 'endPage': 6, 'selected': 6, 'enabled': False}).encode(), {'Content-Type': 'application/json'})
                 with opener.open(request) as response:
                     self.assertIn('profile', json.load(response))

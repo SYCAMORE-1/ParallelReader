@@ -403,5 +403,10 @@ if __name__ == "__main__":
         pass
     finally:
         app.translator.close()
+        # Finish in-flight writes before finalising the portable book folders.
+        for worker in app.translator.threads:
+            worker.join()
+        app.image_translator.close(wait=True)
         app.server_close()
+        app.store.db.close()
 

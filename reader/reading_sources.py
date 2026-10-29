@@ -51,6 +51,7 @@ def choose(store, book, settings, source, configuration):
         raise ValueError('所选本地译文不存在')
     with store.lock, store.db:
         store.db.execute('INSERT OR REPLACE INTO reading_sources VALUES (?,?,?,?)', (book['id'], current, source, time.time()))
+    store.touch_book(book['id'])
     return selection(store, book, settings)
 
 

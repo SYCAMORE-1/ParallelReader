@@ -169,7 +169,10 @@ class ImageTranslator:
         if not result:
             raise KeyError('中文译图尚未生成')
         path = (self.store.directory / result['render']['file']).resolve()
-        path.relative_to((self.store.directory / 'translated-images').resolve())
+        allowed = [(self.store.book_directory(book) / 'translated-images').resolve(),
+                   (self.store.directory / 'translated-images').resolve()]
+        if not any(path.is_relative_to(root) for root in allowed):
+            raise ValueError('译图文件路径越界')
         return path.read_bytes(), result['render']['digest']
 
     def _status(self, key):
@@ -238,7 +241,7 @@ class ImageTranslator:
                 draft = preserve_codes(data, validate_result(self.read(book, asset, data, mime, settings)))
                 draft.update(sourceModel=settings['model'], reviewModel='', reviewed=False,
                              language=settings['targetLanguage'], created=time.time(), version=VERSION)
-                self.store.cache_language_result(key + ':draft', draft)
+                self.store.cache_language_result(key + ':draft', draft, book=book['id'])
             draft = preserve_codes(data, draft)
             self.store.book(book['id'])
             if checkpoint:
@@ -259,14 +262,18 @@ class ImageTranslator:
                 result = preserve_codes(data, validate_result(self.read(book, asset, data, mime, locate_settings, result)))
             result = preserve_codes(data, result)
             result.update(created=time.time(), reviewed=bool(settings.get('reviewEnabled')))
-            self.store.cache_language_result(key + ':reviewed', result)
+            self.store.cache_language_result(key + ':reviewed', result, book=book['id'])
             self._stage(key, 'rendering')
-            result['render'] = self.render(data, result, self.store.directory)
+            directory = self.store.book_directory(book)
+            rendered = self.render(data, result, directory)
+            target = (directory / rendered['file']).resolve()
+            target.relative_to((directory / 'translated-images').resolve())
+            result['render'] = {**rendered, 'file': target.relative_to(self.store.directory).as_posix()}
             result['imageUrl'] = f'/api/books/{book["id"]}/translated-images/{asset}?v={result["render"]["digest"]}'
             result.update(sourceModel=settings['model'], reviewModel=settings.get('reviewModel', '') if settings.get('reviewEnabled') else '',
                           reviewed=bool(settings.get('reviewEnabled')), language=settings['targetLanguage'],
                           created=time.time(), seconds=round(time.time() - self.jobs[key]['started'], 2), version=VERSION)
-            self.store.cache_language_result(key, result)
+            self.store.cache_language_result(key, result, book=book['id'])
             self._stage(key, 'ready')
         except Exception as exc:
             self._stage(key, 'error', str(exc)[:600])
@@ -278,8 +285,8 @@ class ImageTranslator:
                 if job['book'] == book_id and job['state'] == 'queued' and job['future'].cancel():
                     job.update(state='error', error='图书已从书架移除', updated=time.time())
 
-    def close(self):
+    def close(self, wait=False):
         self.book_jobs.close()
         with self.lock:
             self.closed = True
-        self.executor.shutdown(wait=False, cancel_futures=True)
+        self.executor.shutdown(wait=wait, cancel_futures=True)

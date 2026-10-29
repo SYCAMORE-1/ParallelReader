@@ -303,7 +303,7 @@ class HttpTests(unittest.TestCase):
                 original_epub = epub_fixture()
                 book = post('/api/import', original_epub, raw=True)
                 self.assertEqual(len(book["paragraphs"]), 3)
-                self.assertEqual((Path(directory) / 'sources' / (book['id'] + '.epub')).read_bytes(), original_epub)
+                self.assertEqual(app.store.source_path(book).read_bytes(), original_epub)
                 post('/api/books/' + book['id'] + '/window', {"page": 0})
                 until(lambda: len(app.store.translations(book['id'], [0, 1, 2], profile(app.store.settings()))) == 3)
                 with self.assertRaises(urllib.error.HTTPError) as error:

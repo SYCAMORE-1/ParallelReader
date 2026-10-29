@@ -7,6 +7,7 @@ import threading
 import time
 import zipfile
 from pathlib import Path
+from reader.book_folders import BookFolders, LibraryConnection
 
 
 def migrate_settings(value):
@@ -26,12 +27,12 @@ def migrate_settings(value):
 
 class Store:
     def __init__(self, directory):
-        self.directory = Path(directory)
+        self.directory = Path(directory).resolve()
         if (self.directory / 'maintenance.lock').exists():
             raise RuntimeError('书库正在整理，请稍后再启动阅读器')
         self.directory.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
-        self.db = sqlite3.connect(self.directory / "reader.sqlite3", check_same_thread=False)
+        self.db = sqlite3.connect(self.directory / "reader.sqlite3", check_same_thread=False, factory=LibraryConnection)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS books (id TEXT PRIMARY KEY, data TEXT, page INTEGER, updated REAL);
@@ -48,18 +49,40 @@ class Store:
             CREATE TABLE IF NOT EXISTS book_translation_failures (book TEXT, profile TEXT, paragraph INTEGER, error TEXT, created REAL, PRIMARY KEY(book, profile, paragraph));
             CREATE TABLE IF NOT EXISTS reproof_jobs (id TEXT PRIMARY KEY, value TEXT);
             CREATE TABLE IF NOT EXISTS translation_revisions (id INTEGER PRIMARY KEY, book TEXT, paragraph INTEGER, profile TEXT, job TEXT, text TEXT, detail TEXT, created REAL);
+            CREATE TABLE IF NOT EXISTS book_locations (book TEXT PRIMARY KEY, folder TEXT);
+            CREATE TABLE IF NOT EXISTS language_cache_books (key TEXT, book TEXT, PRIMARY KEY(key,book));
             CREATE INDEX IF NOT EXISTS translations_profile ON translations(book, profile);
             INSERT OR IGNORE INTO bookmarks SELECT id,page,0,updated FROM books;
         """)
         self.db.commit()
         self.register_translation_profiles(self.settings())
+        self.folders = BookFolders(self)
+        try:
+            self.folders.initialise()
+        except Exception:
+            self.db.close()
+            raise
+        self.db.before_close = lambda: self.flush_book_folders(force=True)
 
-    def save_source(self, book_id, data):
+    def book_directory(self, book, create=False):
+        with self.lock:
+            return self.folders.directory(book, create=create)
+
+    def source_path(self, book):
+        return self.book_directory(book) / 'original.epub'
+
+    def touch_book(self, book):
+        with self.lock:
+            self.folders.touch(book)
+
+    def flush_book_folders(self, force=False):
+        self.folders.flush(force=force)
+
+    def save_source(self, book_id, data, book=None):
         if hashlib.sha256(data).hexdigest()[:24] != book_id:
             raise ValueError('EPUB 文件与书籍不匹配')
-        directory = self.directory / 'sources'
-        directory.mkdir(exist_ok=True)
-        target = directory / (book_id + '.epub')
+        directory = self.book_directory(book or book_id, create=True)
+        target = directory / 'original.epub'
         if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest()[:24] == book_id:
             return
         with tempfile.NamedTemporaryFile(dir=directory, suffix='.tmp', delete=False) as stream:
@@ -79,7 +102,7 @@ class Store:
             raise ValueError('无效的书籍标识')
         if item['mime'] not in {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}:
             raise ValueError('不支持的插图格式')
-        source = self.directory / 'sources' / (book['id'] + '.epub')
+        source = self.source_path(book)
         if not source.is_file():
             raise ValueError('插图源文件尚未恢复，请重新导入原书')
         with zipfile.ZipFile(source) as archive:
@@ -90,8 +113,9 @@ class Store:
         return data, item['mime']
 
     def add(self, book, source_bytes=None):
+        self.book_directory(book, create=True)
         if source_bytes is not None:
-            self.save_source(book['id'], source_bytes)
+            self.save_source(book['id'], source_bytes, book)
         with self.lock, self.db:
             row = self.db.execute('SELECT data,page FROM books WHERE id=?', (book['id'],)).fetchone()
             if row and source_bytes is not None:
@@ -117,6 +141,8 @@ class Store:
             self.db.execute("INSERT OR IGNORE INTO books VALUES (?,?,?,?)", (book["id"], json.dumps(book, ensure_ascii=False), book["startPage"], time.time()))
             self.db.execute('INSERT OR IGNORE INTO bookmarks SELECT id,page,0,updated FROM books WHERE id=?', (book['id'],))
             self.db.execute('DELETE FROM removed_books WHERE book=?', (book['id'],))
+        self.touch_book(book['id'])
+        self.flush_book_folders(force=True)
         return self.book(book["id"])
 
     def remove(self, book_id):
@@ -129,7 +155,7 @@ class Store:
         with self.lock:
             row = self.db.execute("SELECT data,page FROM books WHERE id=? AND NOT EXISTS (SELECT 1 FROM removed_books WHERE book=books.id)", (book_id,)).fetchone()
             bookmark = self.bookmark(book_id)
-        if row is None:
+        if row is None or not self.folders.available(book_id):
             raise KeyError("书籍不存在")
         return {**json.loads(row[0]), "currentPage": row[1], 'bookmark': bookmark}
 
@@ -145,6 +171,8 @@ class Store:
             jobs = {job['id']: job for row in self.db.execute("SELECT value FROM reproof_jobs WHERE json_extract(value,'$.profile')=?", (fingerprint,)) for job in [json.loads(row[0])]}
         result = {}
         for book, total in totals:
+            if not self.folders.available(book):
+                continue
             ready = min(total, completed.get(book, 0))
             result[book] = {'completed': ready, 'total': total,
                             'percent': 100.0 if ready == total else min(99.9, round(ready * 100 / max(total, 1), 1)),
@@ -180,7 +208,7 @@ class Store:
             marks = {row[0]: {'page': row[1], 'manual': bool(row[2]), 'updated': row[3]} for row in self.db.execute('SELECT book,page,manual,updated FROM bookmarks')}
         statistics = self.library_progress(fingerprint, draft_profile) if fingerprint else {}
         return [{k: b[k] for k in ("id", "title", "author", "cover")} | {"pageCount": len(b["pages"]), "currentPage": page, "updated": updated, 'bookmark': marks.get(b['id'])}
-                | ({'translationProgress': statistics.get(b['id'])} if fingerprint else {}) for raw, page, updated in rows for b in [json.loads(raw)]]
+                | ({'translationProgress': statistics.get(b['id'])} if fingerprint else {}) for raw, page, updated in rows for b in [json.loads(raw)] if self.folders.available(b['id'])]
 
     def progress(self, book_id, page, layout_version=None):
         book = self.book(book_id)
@@ -190,6 +218,7 @@ class Store:
         with self.lock, self.db:
             self.db.execute("UPDATE books SET page=?,updated=? WHERE id=?", (page, time.time(), book_id))
             self.db.execute('UPDATE bookmarks SET page=?,updated=? WHERE book=? AND manual=0', (page, time.time(), book_id))
+        self.touch_book(book_id)
 
     def bookmark(self, book_id):
         with self.lock:
@@ -204,6 +233,7 @@ class Store:
             raise ValueError('请选择有效的书签页码')
         with self.lock, self.db:
             self.db.execute('INSERT OR REPLACE INTO bookmarks VALUES (?,?,?,?)', (book_id, page if manual else book['currentPage'], int(manual), time.time()))
+        self.touch_book(book_id)
         return self.bookmark(book_id)
 
     def settings(self):
@@ -255,6 +285,7 @@ class Store:
             else:
                 self.db.execute("DELETE FROM translation_details WHERE book=? AND paragraph=? AND profile=?", (book, paragraph, profile))
             self.db.execute("DELETE FROM book_translation_failures WHERE book=? AND profile=? AND paragraph=?", (book, profile, paragraph))
+        self.touch_book(book)
 
     def cached_paragraphs(self, book, profile):
         with self.lock:
@@ -273,6 +304,7 @@ class Store:
     def cache_draft(self, book, paragraph, profile, value):
         with self.lock, self.db:
             self.db.execute("INSERT OR REPLACE INTO translation_drafts VALUES (?,?,?,?,?)", (book, paragraph, profile, json.dumps(value, ensure_ascii=False), time.time()))
+        self.touch_book(book)
 
     def drafted_paragraphs(self, book, profile):
         with self.lock:
@@ -287,6 +319,7 @@ class Store:
     def save_bulk_job(self, book, profile, model, state, reason=''):
         with self.lock, self.db:
             self.db.execute("INSERT OR REPLACE INTO book_translation_jobs VALUES (?,?,?,?,?,?)", (book, profile, model, state, reason, time.time()))
+        self.touch_book(book)
 
     def bulk_failures(self, book, profile):
         with self.lock:
@@ -295,10 +328,12 @@ class Store:
     def fail_bulk_paragraph(self, book, profile, paragraph, error):
         with self.lock, self.db:
             self.db.execute("INSERT OR REPLACE INTO book_translation_failures VALUES (?,?,?,?,?)", (book, profile, paragraph, error, time.time()))
+        self.touch_book(book)
 
     def clear_bulk_failures(self, book, profile):
         with self.lock, self.db:
             self.db.execute("DELETE FROM book_translation_failures WHERE book=? AND profile=?", (book, profile))
+        self.touch_book(book)
 
     def translation_detail(self, book, paragraph, profile):
         with self.lock:
@@ -320,6 +355,7 @@ class Store:
             self.db.execute('UPDATE translations SET text=?,created=? WHERE book=? AND paragraph=? AND profile=?', (result['text'], time.time(), book, paragraph, profile))
             self.db.execute('INSERT OR REPLACE INTO translation_details VALUES (?,?,?,?)', (book, paragraph, profile, json.dumps(result, ensure_ascii=False)))
             self.db.execute('DELETE FROM book_translation_failures WHERE book=? AND profile=? AND paragraph=?', (book, profile, paragraph))
+            self.touch_book(book)
             return True
 
     def reproof_jobs(self):
@@ -329,19 +365,26 @@ class Store:
     def save_reproof_job(self, value):
         with self.lock, self.db:
             self.db.execute('INSERT OR REPLACE INTO reproof_jobs VALUES (?,?)', (value['id'], json.dumps(value, ensure_ascii=False)))
+        self.touch_book(value.get('book'))
 
     def save_reproof_jobs(self, values):
         """Create/update a whole-book group and its chapters atomically."""
         with self.lock, self.db:
             self.db.executemany('INSERT OR REPLACE INTO reproof_jobs VALUES (?,?)',
                                 [(value['id'], json.dumps(value, ensure_ascii=False)) for value in values])
+        for value in values:
+            self.touch_book(value.get('book'))
 
     def language_result(self, key):
         with self.lock:
             row = self.db.execute("SELECT value FROM language_cache WHERE key=?", (key,)).fetchone()
         return json.loads(row[0]) if row else None
 
-    def cache_language_result(self, key, value):
+    def cache_language_result(self, key, value, book=None):
         with self.lock, self.db:
             self.db.execute("INSERT OR REPLACE INTO language_cache VALUES (?,?,?)", (key, json.dumps(value, ensure_ascii=False), time.time()))
+            owner = book or self.folders.owner(value)
+            if owner:
+                self.db.execute('INSERT OR IGNORE INTO language_cache_books VALUES (?,?)', (key, owner))
+                self.touch_book(owner)
 

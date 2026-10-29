@@ -60,7 +60,11 @@ python server.py --open
 
 Import an unencrypted EPUB and select LLM or Azure Translate in Settings. LLM book translation uses the book model configuration. LLM word/context explanations require their own endpoint and model; changing the book service does not change the lookup service.
 
-Click **＋** in the bookshelf to select an EPUB from your file system. Importing copies the original file into `.data/sources/`; the reader does not depend on the file remaining in its previous location. Copy the entire `.data/` folder when moving your library to another computer.
+Click **＋** in the bookshelf to select an EPUB. Each book receives a folder in `.data/books/`, named after its title with a short edition identifier. It contains `original.epub`, translated images, exported EPUBs, and a credential-free `book.sqlite3` transfer snapshot with saved translations, drafts, reading position and bookmarks. The shared `.data/reader.sqlite3` remains the live library database.
+
+To move selected books, close the reader first, copy only their folders into the other installation's `.data/books/`, and start that reader. Copied books are discovered automatically, even without the original shared database. Moving a folder out hides that book from its original bookshelf while retaining its shared database records. Folder labels can be renamed; keep the contents and `book.json` together. Stop the reader before copying either installation. Snapshots refresh periodically while running and are finalised on normal shutdown; for a manual flush, with the reader closed, run `runtime/python.exe tools/organize_library.py --apply`.
+
+Existing flat libraries are organised automatically on startup. For an explicit migration with a database backup, close the reader and run `runtime/python.exe tools/organize_library.py --apply`; omit `--apply` to preview folder names. Existing source files, translations, versions, reading positions and bookmarks are preserved. Previously missing resources are reported and are not silently discarded.
 
 Saved content can be read offline. New translations require the selected service; proofreading requires an LLM. Word lookup defaults to Azure Translate and can independently use an LLM for fuller explanations. Model weights are not included. Content needed for a request is sent to the selected service.
 
@@ -80,7 +84,7 @@ Select **LLM** or **Azure Translate** separately under **Word / context translat
 
 ### Keeping the private library compact
 
-The library directory contains original EPUBs in `sources/`, translated illustrations in `translated-images/`, exported EPUBs in `exports/`, and `reader.sqlite3` for settings, saved translations, sentence alignment, dictionary caches, reading positions, bookmarks and resumable jobs. `library-catalog.json` retains import information. SQLite may also create temporary `-wal` and `-shm` files while running.
+The library directory groups resources under `books/<title -- edition>/`. Its shared `reader.sqlite3` stores live settings and cached state; each book's `book.sqlite3` contains a separate portable snapshot without model credentials. Snapshots duplicate the selected book's database records so a book folder can be moved independently. `library-catalog.json` retains older import information. SQLite may also create temporary `-wal` and `-shm` files while running.
 
 Builds and test output belong in `dist/` and `test-results/`, outside `.data/`. To inspect generated files that can be removed, then clean them with the reader closed:
 
@@ -155,7 +159,11 @@ python server.py --open
 
 导入未加密 EPUB 后，在设置中选择 LLM 或 Azure Translate。图书 LLM 与查词 LLM 分别配置接口和模型，改变图书服务不会改变查词服务。
 
-点击书架中的 **＋**，从文件系统选择 EPUB。导入时原文件会复制到 `.data/sources/`，之后不依赖原来的文件位置；迁移时带上整个 `.data/` 文件夹即可。
+点击书架中的 **＋** 选择 EPUB。新书会自动在 `.data/books/` 下创建“书名 -- 短编号”文件夹，里面统一保存 `original.epub` 原书、`translated-images/` 译图、`exports/` 导出译本，以及 `book.sqlite3` 单书迁移快照。总数据库 `.data/reader.sqlite3` 继续负责日常读写；单书快照会额外保存该书的译文、初译、校对记录、进度和书签，不携带模型密钥。
+
+**按书搬运：先正常关闭阅读器，只复制想搬走的书名文件夹到另一套程序的 `.data/books/`，再启动。** 目标程序会自动恢复这些书，无需搬走原来的总数据库；没复制的书会留在原处。把某书文件夹移出后，原书架会隐藏它，总数据库中的记录仍保留。文件夹可以改名，但要把里面的文件和 `book.json` 一起搬运。两边阅读器都应先关闭；运行中约每十秒同步快照，正常退出时完成最后同步。需要手动同步时，关闭阅读器后运行 `runtime/python.exe tools/organize_library.py --apply`。
+
+旧版平铺书库会在启动时整理。也可以先关闭阅读器，再运行 `runtime/python.exe tools/organize_library.py --apply`，先备份数据库再迁移；去掉 `--apply` 只预览目录名称。整理保留原书、全部已有译本、进度和书签，并报告迁移前就已缺失的资源。
 
 已有译文可离线阅读；新增翻译需要连接所选服务，正文校对需要大模型。单词翻译默认使用 Azure Translate，也可独立选择 LLM。程序不包含模型权重，处理所需内容会发送到所选服务。
 
@@ -175,7 +183,7 @@ python server.py --open
 
 ### 保持私人书库精简
 
-`.data/` 中的 `sources/` 保存原始 EPUB，`translated-images/` 保存译图，`exports/` 保存导出 EPUB；`reader.sqlite3` 保存配置、已有译文、句子对应、词典缓存、阅读位置、书签和续传任务，`library-catalog.json` 保存导入信息。运行时出现的 `-wal`、`-shm` 是 SQLite 的临时文件。
+`.data/` 按 `books/书名 -- 短编号/` 组织书籍资源。共享 `reader.sqlite3` 保存配置与实时状态；每书的 `book.sqlite3` 额外保存独立迁移快照，方便只搬选中的书，因此会占用一份该书状态副本的空间。`library-catalog.json` 保留旧版导入信息。运行时出现的 `-wal`、`-shm` 是 SQLite 的临时文件。
 
 发布包和测试产物放在 `.data/` 外的 `dist/`、`test-results/`。关闭阅读器后，可先检查、再清理无用生成文件：
 
@@ -214,9 +222,13 @@ ParallelReader/
 ├─ check-portable.bat
 └─ .data/                  # PRIVATE, Git-ignored, never publicly bundled / 私人书库
    ├─ reader.sqlite3
-   ├─ sources/
-   ├─ translated-images/
-   └─ exports/
+   └─ books/
+      └─ Book Title -- edition/
+         ├─ book.json
+         ├─ original.epub
+         ├─ book.sqlite3
+         ├─ translated-images/
+         └─ exports/
 ```
 
 Third-party font and runtime licenses are included with their respective resources.  

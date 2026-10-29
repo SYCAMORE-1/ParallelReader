@@ -96,6 +96,9 @@ def build(destination, include_data=False, make_zip=False):
 公开程序包不携带图书、译文、书签或模型接口配置；首次启动为空书架。
 已有私人书库时，将单独保存的 .data 文件夹放到程序根目录，再启动即可读取书籍、已保存译文、阅读进度和书签。
 .data 属于私人数据，不应加入代码仓库或公开发布包。复制前先关闭阅读器；也可用 tools/export_library.py 生成一致性快照。
+按书迁移时，正常关闭阅读器后，只复制 .data/books/ 中选定的“书名 -- 短编号”文件夹到新程序的同名 books/ 目录，启动时自动恢复。
+每书文件夹包含 original.epub、book.sqlite3 迁移快照、译图和导出译本。保留 book.json 和文件夹全部内容；单书快照不携带模型密钥。
+旧版平铺目录会在启动时自动整理；tools/organize_library.py --apply 可先备份数据库再整理。运行中定期同步单书快照，正常退出时完成最后同步。
 模型地址、模型名称和可选 API Key 由使用者在设置中填写，仅保存在本地 .data 中。默认没有任何模型接口地址。
 已保存译文可离线阅读；新增翻译、查词和校对需配置兼容的模型服务，程序包不包含模型权重。
 图书翻译在 LLM 与 Azure Translate 之间选择；Azure Translate 只翻译文字，图片保留原图。

@@ -66,7 +66,7 @@ class LanguageTools:
         material = [VERSION, kind, book['id'], pid, profile(settings), extra]
         return hashlib.sha256(json.dumps(material, ensure_ascii=False).encode()).hexdigest()
 
-    def cached_call(self, key, fn):
+    def cached_call(self, key, fn, book=None):
         cached = self.store.language_result(key)
         if cached is not None:
             return cached
@@ -81,7 +81,7 @@ class LanguageTools:
         try:
             with self.slots:
                 value = fn()
-            self.store.cache_language_result(key, value)
+            self.store.cache_language_result(key, value, book=book)
             future.set_result(value)
             return value
         except Exception as exc:
@@ -129,7 +129,7 @@ class LanguageTools:
             if any(len(group['source']) > 1 and len(group['target']) > 1 for group in groups):
                 raise RuntimeError('句子对应关系过于粗略，请重试')
             return groups
-        view['alignment'] = self.cached_call(self.key('align', book, pid, settings, text), compute)
+        view['alignment'] = self.cached_call(self.key('align', book, pid, settings, text), compute, book['id'])
         return view
 
     def explain(self, book, pid, word, settings, offset=None):
@@ -147,7 +147,7 @@ class LanguageTools:
             from reader.microsoft_dictionary import VERSION as WORD_VERSION, explain as microsoft_explain
             identity = [WORD_VERSION, book['id'], pid, word.casefold(), offset, settings['targetLanguage']]
             key = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
-            result = self.cached_call(key, lambda: microsoft_explain(book, pid, word, settings, offset))
+            result = self.cached_call(key, lambda: microsoft_explain(book, pid, word, settings, offset), book['id'])
             return {'word': word, **result, 'meaning': result['contextMeaning']}
         # Explicit LLM lookup remains independent of the paragraph provider.
         settings = word_settings(settings)
@@ -197,5 +197,5 @@ class LanguageTools:
             kind += ':' + PARACHUTE_VERSION
         if term_note and SCENE_WORD.fullmatch(word):
             kind += ':' + SCENE_VERSION
-        result = self.cached_call(self.key(kind, book, pid, settings, {'word': word.casefold(), 'offset': offset}), compute)
+        result = self.cached_call(self.key(kind, book, pid, settings, {'word': word.casefold(), 'offset': offset}), compute, book['id'])
         return {'word': word, **result, 'provider': 'llm', 'meaning': result['contextMeaning'], 'model': settings['model'], 'contextWindow': {'before': len(context['previousSentences']), 'after': 0}}

@@ -59,7 +59,7 @@ def copy_library(source, destination):
     if source == destination or source.is_relative_to(destination):
         raise ValueError('书库目标不能覆盖原书库或其父目录')
     statistics = snapshot_library(source, destination)
-    for name in ['sources', 'translated-images', 'exports']:
+    for name in ['books', 'sources', 'translated-images', 'exports']:
         if (source / name).is_dir():
             shutil.copytree(source / name, destination / name, ignore=shutil.ignore_patterns('*.tmp'))
     if (source / 'library-catalog.json').is_file():

@@ -3,7 +3,7 @@ import copy
 import time
 import uuid
 
-from reader.translation_rules import is_literal_reference, person_names, translation_plan
+from reader.translation_rules import paragraph_plan, person_names, translation_plan
 
 
 def selected_slots(book, pid, detail, selection):
@@ -33,10 +33,11 @@ def review_existing(book, pid, settings, snapshot, selection, store):
     # Import lazily: Translator owns the queue but shares its existing workers.
     from reader.translation import proofread, draft_settings, profile, request_json, REVIEW_VERSION, STYLE_VERSION, TERMINOLOGY_VERSION
     full_source = book['paragraphs'][pid]['text']
-    names = [] if is_literal_reference(full_source) else person_names(book, pid, draft_settings(settings), request_json, store)
+    fixed = all(piece['fixed'] for piece in paragraph_plan(book, pid, [])['pieces'])
+    names = [] if fixed else person_names(book, pid, draft_settings(settings), request_json, store)
     detail = snapshot['detail']
     if selection is None:
-        plan = translation_plan(full_source, names)
+        plan = paragraph_plan(book, pid, names)
         result = proofread(book, pid, settings, plan, {'text': snapshot['text']})
         result['proofreading'] = {'model': settings['reviewModel'], 'version': REVIEW_VERSION, 'styleVersion': STYLE_VERSION, 'terminologyVersion': TERMINOLOGY_VERSION, 'draftProfile': profile(draft_settings(settings))}
         return result

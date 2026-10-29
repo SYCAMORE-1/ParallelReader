@@ -13,6 +13,17 @@ from test_reader import queue_book
 
 
 class TranslationRulesTests(unittest.TestCase):
+    def test_person_names_do_not_split_social_handles_into_adjacent_tokens(self):
+        source = 'Morgan Lane thanked Jamie Fox. Follow @morgan_lane.'
+        names = ['Morgan Lane', 'Jamie Fox', 'Morgan', 'Lane']
+        masked, tokens = protect_names(source, names)
+        self.assertIn('@morgan_lane', masked)
+        self.assertEqual(set(tokens.values()), {'Morgan Lane', 'Jamie Fox'})
+        plan = translation_plan(source, names)
+        result = finish_translation(plan, ['__PERSON_000__向__PERSON_001__致谢。', '请关注@morgan_lane。'])
+        self.assertEqual(result['text'], 'Morgan Lane向Jamie Fox致谢。请关注@morgan_lane。')
+        self.assertEqual(result['protectedNames'], ['Jamie Fox', 'Morgan Lane'])
+
     def test_redacted_locations_are_preserved_without_inventing_text(self):
         for source in ['xxxxx xxxxxxx xxxxxxxxxxx xxxxx', 'xxx xxxx, xxxxxxxx', 'XXXXXXXXXX', '[XXX]', 'XX', 'xxxxx xx xxx xx xxxx.']:
             with self.subTest(source=source):

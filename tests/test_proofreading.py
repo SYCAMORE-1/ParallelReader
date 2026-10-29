@@ -18,6 +18,50 @@ def reply(values):
 
 
 class ProofreadingTests(unittest.TestCase):
+    def test_name_repair_does_not_block_later_cross_slot_repetition_repair(self):
+        self.book['paragraphs'][4]['text'] = ('What if Morgan were not elected president? '
+                                             'These were variables with which the country must contend. '
+                                             'Could they not see what was coming?')
+        targets = ['要是__PERSON_000__未能当选总统呢？', '这些都是变数，是这个国家必须面对的变数。', '难道他们看不出即将发生什么吗？']
+        unit = lambda text: {'choices': [{'message': {'content': json.dumps({'translation': text}, ensure_ascii=False)}}]}
+        outputs = [reply(targets), reply(['要是他没能当选总统呢？', targets[0], targets[1]]),
+                   unit(targets[0]), unit(targets[1]), unit(targets[1]), unit(targets[2])]
+        with patch('reader.translation.request_json', side_effect=outputs) as request:
+            result = translate(self.book, 4, self.settings, self.store)
+        self.assertEqual(request.call_count, 6)
+        self.assertEqual(result['targetSentences'], ['要是Morgan未能当选总统呢？', *targets[1:]])
+        self.assertEqual(result['text'].count('这些都是变数'), 1)
+
+    def test_repeated_unit_repair_is_checked_against_neighbor_before_acceptance(self):
+        self.book['paragraphs'][4]['text'] = ('He switched off the device and led his team to the ambush site. '
+                                             'The machine needed twenty minutes to recover enough power for another shot.')
+        targets = ['他关闭了战术电磁脉冲装置，带领七人小队前往山上的伏击地点。',
+                   '装置需要二十分钟才能恢复并储存足够的能量，以便再次发射。']
+        copied = ''.join(targets)
+        unit = lambda text: {'choices': [{'message': {'content': json.dumps({'translation': text}, ensure_ascii=False)}}]}
+        outputs = [reply(targets), reply([copied, targets[1]]), unit(copied), unit(targets[0])]
+        with patch('reader.translation.request_json', side_effect=outputs) as request:
+            result = translate(self.book, 4, self.settings, self.store)
+        self.assertEqual(result['targetSentences'], targets)
+        self.assertEqual(request.call_count, 4)
+        self.assertEqual(request.call_args.args[1]['response_format']['type'], 'json_object')
+        self.assertIn('other_units_do_not_translate_or_repeat', request.call_args.args[1]['messages'][0]['content'])
+        self.assertTrue(all(call.args[1]['model'] == self.settings['reviewModel'] for call in request.call_args_list[1:]))
+
+    def test_persistent_neighbor_copy_stays_bounded_and_does_not_replace_draft(self):
+        self.book['paragraphs'][4]['text'] = ('He switched off the device and led his team to the ambush site. '
+                                             'The machine needed twenty minutes to recover enough power for another shot.')
+        targets = ['他关闭了战术电磁脉冲装置，带领七人小队前往山上的伏击地点。',
+                   '装置需要二十分钟才能恢复并储存足够的能量，以便再次发射。']
+        copied = ''.join(targets)
+        invalid = {'choices': [{'message': {'content': json.dumps({'translation': copied}, ensure_ascii=False)}}]}
+        with patch('reader.translation.request_json', side_effect=[reply(targets), reply([copied, targets[1]]), invalid, invalid]) as request:
+            with self.assertRaisesRegex(RuntimeError, '重复'):
+                translate(self.book, 4, self.settings, self.store)
+        self.assertEqual(request.call_count, 4)
+        self.assertEqual(self.store.draft(self.book['id'], 4, profile(draft_settings(self.settings)))['text'], ''.join(targets))
+        self.assertIsNone(self.store.translation(self.book['id'], 4, profile(self.settings)))
+
     def test_haho_initial_and_review_both_reject_halo_expansion(self):
         self.book['paragraphs'][4]['text'] = 'They made a HAHO jump. The team waited.'
         wrong, correct = '他们进行了高跳低开（HAHO）跳伞。', '他们进行了高跳高开（HAHO）跳伞。'

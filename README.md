@@ -23,6 +23,7 @@ A portable bilingual EPUB reader with contextual translation, proofreading, and 
 - In-image translation with original/translated image switching and QR-code preservation.
 - Sentence correspondence highlighting and contextual word lookup without reading ahead.
 - Bookshelf cover views, reading/translation progress, one bookmark per book, and return-to-bookmark.
+- Personal iPhone access over Tailscale, using the same local bookshelf and reading position from another network.
 - Local translation caching and Chinese-only or bilingual EPUB export, including translated illustrations.
 - Chinese originals and detected translated editions open directly in scrolling mode, without translation requests.
 - The bookshelf archive button creates an AES-256 encrypted ZIP with volumes capped at 500 MiB. Set your own password, download all volumes, then select them together with Import to restore and merge. Identical saved content is skipped; different originals or translations remain separate editions.
@@ -79,6 +80,12 @@ On Windows 10/11 x64, download this repository using **Code → Download ZIP**, 
 
 The Windows portable release works the same way. Use `start-mobile.bat` for access from a phone on the same local network. If startup fails, run `check-portable.bat` to check the runtime, imports, fonts and any existing library. Release packages also verify their file checksums.
 
+| Where you read | Launcher | What to open |
+| --- | --- | --- |
+| This computer | `start.bat` | The local browser window |
+| Phone on the same Wi-Fi | `start-mobile.bat` | The LAN URL shown in the startup window |
+| Your iPhone on mobile data or another Wi-Fi | `start-tailscale.bat` | The Tailscale URL shown in the startup window; connect Tailscale on both devices first |
+
 For development with your own Python 3.10+ installation instead of the bundled runtime:
 
 ```powershell
@@ -95,6 +102,14 @@ To move selected books, close the reader first, copy only their folders into the
 Existing flat libraries are organised automatically on startup. For an explicit migration with a database backup, close the reader and run `runtime/python.exe tools/organize_library.py --apply`; omit `--apply` to preview folder names. Existing source files, translations, versions, reading positions and bookmarks are preserved. Previously missing resources are reported and are not silently discarded.
 
 Saved content can be read offline. New translations require the selected service; proofreading requires an LLM. Word lookup defaults to Azure Translate and can independently use an LLM for fuller explanations. Model weights are not included. Content needed for a request is sent to the selected service.
+
+### Personal remote access from an iPhone
+
+Install Tailscale yourself on the server PC and iPhone, sign in to the same personal account, and connect both devices. Close the previously running reader, then run **`start-tailscale.bat`**. The startup window shows the computer's private IPv4 URL to open in Safari over mobile data or another Wi-Fi network. The reader checks the existing connection and accepts only local access and traffic through the detected Tailscale address; the normal LAN interface is not enabled.
+
+The same bookshelf, translations, reading position and model configuration remain in use. Keep the computer online and the reader running. This launcher does not install, sign in to or configure Tailscale. Missing, disconnected and occupied-port cases stop with instructions. See [the setup guide](docs/tailscale.md), including firewall troubleshooting and custom ports.
+
+For a different port, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 -Tailscale -Port 8766`. The iPhone must use the port printed in that startup window. Support has been checked with simulated client states, HTTP access tests and a portable build; a real off-network iPhone connection still requires a connected Tailscale installation.
 
 ### Saved translations and service switching
 
@@ -150,6 +165,7 @@ This beta supports unencrypted EPUBs. Complex layouts, small or rotated image te
 - 译文直接排入图片，可切换原图／译图，并保留二维码。
 - 中英文句子对应高亮，双击单词查看不读取后文的语境解释。
 - 封面书架、阅读／翻译进度、每书一个书签，从书架打开时返回书签。
+- 支持自己的 iPhone 通过 Tailscale 异地访问，沿用电脑上的书架和阅读进度。
 - 译文缓存保存在本机，可导出包含译图的中文或双语 EPUB。
 - 中文原著和已识别译本无需再次翻译，直接滚动阅读，其余三种内容显示模式置灰。
 - 书架支持自行设置密码的 AES-256 加密分卷 ZIP，每卷最多 500 MiB；可导入并合并书架，不同版本分别保留。
@@ -206,6 +222,12 @@ Windows 10/11 64 位电脑可直接在仓库点击 **Code → Download ZIP**，�
 
 Windows 便携发布包使用方法相同；手机同局域网访问使用 `start-mobile.bat`。启动失败时运行 `check-portable.bat`，检查运行环境、程序导入、字体及已有书库；正式构建的发布包还会校验文件完整性。
 
+| 使用场景 | 启动入口 | 访问方式 |
+| --- | --- | --- |
+| 本机阅读 | `start.bat` | 电脑上自动打开的本机页面 |
+| 手机与电脑在同一 Wi-Fi | `start-mobile.bat` | 启动窗口显示的局域网网址 |
+| 自己的 iPhone 使用流量或其他 Wi-Fi | `start-tailscale.bat` | 两端先连接 Tailscale，再打开启动窗口给出的私网网址 |
+
 开发时如需使用自己安装的 Python 3.10+，可运行：
 
 ```powershell
@@ -222,6 +244,14 @@ python server.py --open
 旧版平铺书库会在启动时整理。也可以先关闭阅读器，再运行 `runtime/python.exe tools/organize_library.py --apply`，先备份数据库再迁移；去掉 `--apply` 只预览目录名称。整理保留原书、全部已有译本、进度和书签，并报告迁移前就已缺失的资源。
 
 已有译文可离线阅读；新增翻译需要连接所选服务，正文校对需要大模型。单词翻译默认使用 Azure Translate，也可独立选择 LLM。程序不包含模型权重，处理所需内容会发送到所选服务。
+
+### iPhone 个人异地访问
+
+需要使用时，自行在服务器电脑和 iPhone 安装 Tailscale，登录同一个个人账号并打开连接。先正常关闭已经运行的阅读器，再双击 **`start-tailscale.bat`**，在 iPhone 的 Safari 打开启动窗口显示的电脑私网 IPv4 网址。手机使用流量或其他 Wi-Fi 均可；电脑需要保持开机、联网，阅读器持续运行。
+
+沿用同一个书架、译文、阅读进度和模型配置。启动器自动检查客户端状态，只启用本机与检测到的 Tailscale 地址，普通局域网接口不启用；未安装、未连接或端口占用时会提示后退出。程序不安装或配置 Tailscale。[详细使用说明](docs/tailscale.md)包含自定义端口、iPhone 设置和防火墙排查。
+
+需要更换端口时运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 -Tailscale -Port 8766`，手机访问的网址使用窗口实际显示的端口。已通过模拟客户端状态、HTTP 访问限制与便携版构建验证；真实 iPhone 外网连接需要在安装并连接 Tailscale 后验证。
 
 ### 已有译文与服务切换
 
@@ -275,6 +305,7 @@ ParallelReader/
 ├─ runtime/                # Portable Python, Pillow, ZIP encryption and licenses / 便携运行环境与许可
 ├─ start.bat
 ├─ start-mobile.bat
+├─ start-tailscale.bat      # Personal remote access / 个人异地访问
 ├─ check-portable.bat
 └─ .data/                  # PRIVATE, Git-ignored, never publicly bundled / 私人书库
    ├─ reader.sqlite3

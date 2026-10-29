@@ -74,7 +74,7 @@ def build(destination, include_data=False, make_zip=False):
     log('Copying application sources and resources...')
     for name in ['reader', 'public', 'tools', 'tests', 'docs']:
         shutil.copytree(ROOT / name, destination / name, ignore=SKIP)
-    for name in ['server.py', 'start.bat', 'start-mobile.bat', 'start.ps1', 'pack-books.bat', 'restore-books.bat', 'README.md', 'requirements.txt', '.gitignore', '.gitattributes']:
+    for name in ['server.py', 'start.bat', 'start-mobile.bat', 'start-tailscale.bat', 'start.ps1', 'pack-books.bat', 'restore-books.bat', 'README.md', 'requirements.txt', '.gitignore', '.gitattributes']:
         shutil.copy2(ROOT / name, destination / name)
     font_path = destination / 'public' / 'fonts' / 'reader-sans.ttf'
     if not font_path.is_file():
@@ -97,6 +97,7 @@ def build(destination, include_data=False, make_zip=False):
 4. 手机预览双击 start-mobile.bat，启动窗口会显示新电脑的局域网地址。手机与电脑使用同一 Wi-Fi，按 Windows 提示允许局域网访问。
 5. 更换端口：powershell -NoProfile -ExecutionPolicy Bypass -File .\\start.ps1 -Port 8766
 6. 若有启动问题，双击 check-portable.bat 检查程序、字体与书库是否完整。
+7. 个人异地访问：自行在电脑与 iPhone 安装 Tailscale 并登录同一账号，先正常关闭原阅读器，再双击 start-tailscale.bat。启动窗口显示 iPhone 在 Safari 中打开的网址。详见 docs/tailscale.md；程序不会安装或配置 Tailscale。
 
 ## 书库与翻译
 

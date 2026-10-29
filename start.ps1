@@ -1,8 +1,10 @@
-param([switch]$Mobile, [ValidateRange(1024, 65535)][int]$Port = 8765, [switch]$NoBrowser)
+param([switch]$Mobile, [switch]$Tailscale, [ValidateRange(1024, 65535)][int]$Port = 8765, [switch]$NoBrowser)
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
+if ($Mobile -and $Tailscale) { throw 'Choose either -Mobile (same Wi-Fi) or -Tailscale (private remote access).' }
 $taskServerArgs = @('-X', 'utf8', (Join-Path $PSScriptRoot 'server.py'), '--port', "$Port")
 if (-not $NoBrowser) { $taskServerArgs += '--open' }
+if ($Tailscale) { $taskServerArgs += '--tailscale' }
 if ($Mobile) {
     $taskLanAddress = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.IPv4Address } | ForEach-Object { $_.IPv4Address.IPAddress } | Where-Object { $_ -notlike '169.254.*' -and $_ -ne '127.0.0.1' } | Select-Object -First 1
     if (-not $taskLanAddress) { throw 'No active LAN IPv4 address. Connect this computer to Wi-Fi first.' }

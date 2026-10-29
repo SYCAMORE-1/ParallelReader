@@ -69,8 +69,16 @@ def validate_settings(value, previous):
             'wordApiKey': '' if value.get('clearWordApiKey') else (str(value.get('wordApiKey', '')).strip() or previous.get('wordApiKey', ''))}
 
 
-def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPLE, translate_fn=None, allowed_hosts=None, reproof_fn=None, image_fn=None, image_render_fn=None):
+def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPLE, translate_fn=None, allowed_hosts=None, reproof_fn=None, image_fn=None, image_render_fn=None, tailscale_address=None):
     allowed_addresses = {'127.0.0.1'}
+    if tailscale_address is not None:
+        from reader.tailscale_access import is_tailscale_ipv4
+        if not is_tailscale_ipv4(tailscale_address):
+            raise ValueError('无效的 Tailscale IPv4 地址')
+        if host != '0.0.0.0' or allowed_hosts:
+            raise ValueError('Tailscale 模式只允许本机和检测到的 VPN 地址')
+        tailscale_address = str(ipaddress.IPv4Address(tailscale_address))
+        allowed_addresses.add(tailscale_address)
     for address in [*(allowed_hosts or []), *([host] if host not in {'127.0.0.1', 'localhost', '0.0.0.0'} else [])]:
         parsed_address = ipaddress.IPv4Address(address)
         if parsed_address.is_unspecified or parsed_address.is_multicast:
@@ -117,12 +125,14 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
             return value
 
         def guard(self):
+            from reader.tailscale_access import request_allowed
             actual_port = self.server.server_port
             allowed = {f"{address}:{actual_port}" for address in allowed_addresses} | {f"localhost:{actual_port}"}
             host_header = self.headers.get("Host", "")
             # A wildcard listener must not expose the library through VPN or
             # other adapters when only the Wi-Fi address was enabled.
-            if self.connection.getsockname()[0] not in allowed_addresses or host_header not in allowed:
+            if (self.connection.getsockname()[0] not in allowed_addresses or host_header not in allowed
+                    or not request_allowed(self.connection.getsockname()[0], self.client_address[0], tailscale_address)):
                 self.respond({"error": "此地址未启用阅读预览"}, 403)
                 return False
             origin = self.headers.get("Origin")
@@ -424,13 +434,28 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parallel Reader · 本地双语 EPUB 阅读器")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址；局域网预览使用 0.0.0.0")
     parser.add_argument("--allow-host", action="append", default=[], help="允许手机访问的电脑 IPv4 地址，可多次指定")
+    parser.add_argument('--tailscale', action='store_true', help='通过已安装且已连接的 Tailscale，供个人设备异地访问')
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8765")))
     parser.add_argument("--open", action="store_true", help="启动后打开浏览器")
     parser.add_argument("--sample", type=Path, default=DEFAULT_SAMPLE)
     args = parser.parse_args()
-    app = make_server(host=args.host, port=args.port, sample=args.sample, allowed_hosts=args.allow_host)
+    tailscale_address = None
+    if args.tailscale:
+        if args.host != '127.0.0.1' or args.allow_host:
+            parser.error('--tailscale 不能与 --host 或 --allow-host 的网络设置同时使用')
+        try:
+            from reader.tailscale_access import address, check_port
+            tailscale_address = address()
+            check_port(args.port)
+        except RuntimeError as exc:
+            parser.exit(2, str(exc) + '\n')
+        args.host = '0.0.0.0'
+    app = make_server(host=args.host, port=args.port, sample=args.sample, allowed_hosts=args.allow_host, tailscale_address=tailscale_address)
     url = f"http://127.0.0.1:{app.server_port}"
     print(f"Parallel Reader ready: {url}", flush=True)
+    if tailscale_address:
+        print(f'iPhone / Tailscale: http://{tailscale_address}:{app.server_port}/', flush=True)
+        print('Keep this window open. Connect iPhone Tailscale with your own account, then open the URL in Safari.', flush=True)
     for address in args.allow_host:
         print(f"Phone preview: http://{address}:{app.server_port}", flush=True)
     if args.open:

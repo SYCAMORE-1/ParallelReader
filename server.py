@@ -4,6 +4,8 @@ import ipaddress
 import json
 import mimetypes
 import os
+import shutil
+import sqlite3
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +19,7 @@ from reader.language import LanguageTools
 from reader.image_translation import ImageTranslator
 from reader.translation import Translator, draft_settings, profile, request_json
 from reader.providers import review_enabled
+from reader.shelf_archive import ArchiveJobs
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_SAMPLE = ROOT / '.data' / 'sample.epub'
@@ -79,6 +82,7 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
     store.image_progress = image_translator.book_jobs.library
     translator = Translator(store, reproof_fn=reproof_fn, image_translator=image_translator, **({"translate_fn": translate_fn} if translate_fn else {}))
     language = LanguageTools(store)
+    archives = ArchiveJobs(store)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -125,7 +129,8 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
             if origin and origin != "http://" + host_header:
                 self.respond({"error": "不允许跨站请求"}, 403)
                 return False
-            if self.command == "POST" and self.headers.get_content_type() not in {"application/json", "application/epub+zip"}:
+            upload = urlparse(self.path).path.startswith('/api/archive/uploads/')
+            if self.command == "POST" and self.headers.get_content_type() not in ({'application/octet-stream'} if upload else {"application/json", "application/epub+zip"}):
                 self.respond({"error": "不支持的请求格式"}, 415)
                 return False
             return True
@@ -136,6 +141,19 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
             parsed = urlparse(self.path)
             parts = parsed.path.strip("/").split("/")
             try:
+                if parts[:3] == ['api', 'archive', 'jobs'] and len(parts) == 4:
+                    return self.respond(archives.status(parts[3]))
+                if parts[:3] == ['api', 'archive', 'files'] and len(parts) == 5:
+                    path = archives.download(parts[3], parts[4])
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/octet-stream')
+                    self.send_header('Content-Length', str(path.stat().st_size))
+                    self.send_header('Content-Disposition', 'attachment; filename="' + path.name + '"')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.end_headers()
+                    with path.open('rb') as stream:
+                        shutil.copyfileobj(stream, self.wfile, 64 * 1024)
+                    return
                 if parsed.path == "/api/health":
                     return self.respond({"ok": True, "version": "0.1.0"})
                 if parsed.path == "/api/books":
@@ -223,7 +241,7 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                         status = translator.status(book, page, end_page=end_page)
                         settings = store.settings()
                         for pid, item in status['items'].items():
-                            if item['state'] == 'ready':
+                            if item['state'] == 'ready' and not book.get('sourceOnly'):
                                 item.update(language.view(book, pid, item['text'], settings, item.get('translationProfile')))
                         from reader.reading_sources import progress
                         status['readingTranslation'] = progress(store, book, settings)
@@ -234,6 +252,7 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                 allowed['/reproof-tools.js'] = 'reproof-tools.js'
                 allowed['/image-translation.js'] = 'image-translation.js'
                 allowed['/translation-sources.js'] = 'translation-sources.js'
+                allowed['/archive-tools.js'] = 'archive-tools.js'
                 for name in ('reader-song.woff2', 'reader-sans.woff2', 'reader-kai.woff2', 'song-OFL.txt', 'sans-OFL.txt', 'kai-OFL.txt', 'NOTICE.json'):
                     allowed['/fonts/' + name] = 'fonts/' + name
                 filename = allowed.get(parsed.path)
@@ -257,12 +276,19 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                 pass
             except OSError as exc:
                 self.respond({'error': '读取或保存文件失败：' + str(exc)[:250]}, 502)
+            except sqlite3.Error:
+                self.respond({'error': '书库读取失败，请稍后重试；已有图书和译文仍保留。'}, 500)
 
         def do_POST(self):
             if not self.guard():
                 return
             parts = urlparse(self.path).path.strip("/").split("/")
             try:
+                if parts[:3] == ['api', 'archive', 'uploads'] and len(parts) == 4:
+                    if self.headers.get('Transfer-Encoding'):
+                        raise ValueError('不支持分块上传。')
+                    name = parse_qs(urlparse(self.path).query).get('name', [''])[0]
+                    return self.respond(archives.upload(parts[3], name, self.rfile, int(self.headers.get('Content-Length', '0'))))
                 if parts == ["api", "import"]:
                     if self.headers.get_content_type() != "application/epub+zip":
                         raise ValueError("请上传 EPUB 文件")
@@ -270,6 +296,14 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                     book = store.add(parse_epub(data), source_bytes=data)
                     return self.respond(book)
                 value = self.json_body()
+                if parts == ['api', 'archive', 'export']:
+                    return self.respond(archives.export(value.get('password'), value.get('confirmation')), 202)
+                if parts == ['api', 'archive', 'import', 'start']:
+                    return self.respond(archives.start_import(), 202)
+                if parts == ['api', 'archive', 'import', 'finish']:
+                    return self.respond(archives.finish_import(value.get('id'), value.get('password')), 202)
+                if parts == ['api', 'archive', 'import', 'cancel']:
+                    return self.respond(archives.cancel(value.get('id')))
                 if parts == ["api", "import-sample"]:
                     if not sample.is_file():
                         raise ValueError("找不到测试 EPUB，请使用“导入 EPUB”选择文件")
@@ -328,6 +362,8 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                     if parts[3] == 'bookmark':
                         return self.respond(store.set_bookmark(book['id'], value.get('page'), value.get('manual', True), value.get('layoutVersion')))
                     if parts[3] in ('align', 'word'):
+                        if book.get('sourceOnly'):
+                            raise ValueError('本书可直接阅读，无需翻译或查词服务。')
                         pid = value.get('paragraph')
                         if type(pid) is not int or not 0 <= pid < len(book['paragraphs']):
                             raise ValueError('段落不存在')
@@ -368,6 +404,7 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
 
     class ReaderServer(ThreadingHTTPServer):
         def server_close(self):
+            archives.close()
             image_translator.close()
             if hasattr(self, 'exporter'):
                 self.exporter.close()
@@ -376,6 +413,7 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
     server = ReaderServer((host, port), Handler)
     server.daemon_threads = True
     server.store = store
+    server.archives = archives
     server.translator = translator
     server.image_translator = image_translator
     server.exporter = BookExporter(store)

@@ -8,6 +8,7 @@ import time
 import zipfile
 from pathlib import Path
 from reader.book_folders import BookFolders, LibraryConnection
+from reader.reading_policy import prepare_book
 
 
 def migrate_settings(value):
@@ -63,6 +64,12 @@ class Store:
             self.db.close()
             raise
         self.db.before_close = lambda: self.flush_book_folders(force=True)
+        with self.db:
+            for bid, raw in self.db.execute('SELECT id,data FROM books').fetchall():
+                value = json.loads(raw)
+                if type(value.get('sourceOnly')) is not bool:
+                    self.db.execute('UPDATE books SET data=? WHERE id=?', (json.dumps(prepare_book(value), ensure_ascii=False), bid))
+                    self.touch_book(bid)
 
     def book_directory(self, book, create=False):
         with self.lock:
@@ -79,11 +86,12 @@ class Store:
         self.folders.flush(force=force)
 
     def save_source(self, book_id, data, book=None):
-        if hashlib.sha256(data).hexdigest()[:24] != book_id:
+        expected = (book or {}).get('sourceId', book_id)
+        if hashlib.sha256(data).hexdigest()[:24] != expected:
             raise ValueError('EPUB 文件与书籍不匹配')
         directory = self.book_directory(book or book_id, create=True)
         target = directory / 'original.epub'
-        if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest()[:24] == book_id:
+        if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest()[:24] == expected:
             return
         with tempfile.NamedTemporaryFile(dir=directory, suffix='.tmp', delete=False) as stream:
             temporary = Path(stream.name)
@@ -113,6 +121,7 @@ class Store:
         return data, item['mime']
 
     def add(self, book, source_bytes=None):
+        book = prepare_book(book)
         self.book_directory(book, create=True)
         if source_bytes is not None:
             self.save_source(book['id'], source_bytes, book)
@@ -157,12 +166,12 @@ class Store:
             bookmark = self.bookmark(book_id)
         if row is None or not self.folders.available(book_id):
             raise KeyError("书籍不存在")
-        return {**json.loads(row[0]), "currentPage": row[1], 'bookmark': bookmark}
+        return {**prepare_book(json.loads(row[0])), "currentPage": row[1], 'bookmark': bookmark}
 
     def library_progress(self, fingerprint, draft_profile=None):
         """Show the latest whole-book review pass, falling back to finalized translations."""
         with self.lock:
-            totals = self.db.execute("SELECT id,json_array_length(data,'$.paragraphs') FROM books WHERE NOT EXISTS (SELECT 1 FROM removed_books WHERE book=books.id)").fetchall()
+            totals = self.db.execute("SELECT id,json_array_length(data,'$.paragraphs'),json_extract(data,'$.sourceOnly') FROM books WHERE NOT EXISTS (SELECT 1 FROM removed_books WHERE book=books.id)").fetchall()
             completed = dict(self.db.execute('SELECT book,count(*) FROM translations WHERE profile=? GROUP BY book', (fingerprint,)))
             drafted = dict(self.db.execute('''SELECT book,count(*) FROM (
                 SELECT book,paragraph FROM translation_drafts WHERE profile=?
@@ -170,7 +179,7 @@ class Store:
                 ) GROUP BY book''', (draft_profile, fingerprint, draft_profile))) if draft_profile else completed
             jobs = {job['id']: job for row in self.db.execute("SELECT value FROM reproof_jobs WHERE json_extract(value,'$.profile')=?", (fingerprint,)) for job in [json.loads(row[0])]}
         result = {}
-        for book, total in totals:
+        for book, total, original_only in totals:
             if not self.folders.available(book):
                 continue
             ready = min(total, completed.get(book, 0))
@@ -178,6 +187,8 @@ class Store:
                             'percent': 100.0 if ready == total else min(99.9, round(ready * 100 / max(total, 1), 1)),
                             'drafted': min(total, drafted.get(book, 0)),
                             'reviewEnabled': draft_profile is not None, 'profile': fingerprint}
+            if original_only:
+                result[book].update(completed=total, drafted=total, percent=100.0, sourceOnly=True, reviewEnabled=False)
         latest = {}
         for job in jobs.values():
             if job['scope'] != 'book' or job['book'] not in result:
@@ -186,6 +197,8 @@ class Store:
             if previous is None or (job.get('round', 1), job['created']) > (previous.get('round', 1), previous['created']):
                 latest[job['book']] = job
         for book, parent in latest.items():
+            if result[book].get('sourceOnly'):
+                continue
             children = [jobs[key] for key in parent['children'] if key in jobs]
             total = sum(len(child['paragraphs']) for child in children)
             if len(children) != len(parent['children']) or total != result[book]['total']:
@@ -207,7 +220,7 @@ class Store:
             rows = self.db.execute("SELECT data,page,updated FROM books WHERE NOT EXISTS (SELECT 1 FROM removed_books WHERE book=books.id) ORDER BY updated DESC").fetchall()
             marks = {row[0]: {'page': row[1], 'manual': bool(row[2]), 'updated': row[3]} for row in self.db.execute('SELECT book,page,manual,updated FROM bookmarks')}
         statistics = self.library_progress(fingerprint, draft_profile) if fingerprint else {}
-        return [{k: b[k] for k in ("id", "title", "author", "cover")} | {"pageCount": len(b["pages"]), "currentPage": page, "updated": updated, 'bookmark': marks.get(b['id'])}
+        return [{k: b[k] for k in ("id", "title", "author", "cover")} | {"pageCount": len(b["pages"]), "currentPage": page, "updated": updated, 'bookmark': marks.get(b['id']), 'sourceOnly': bool(b.get('sourceOnly'))}
                 | ({'translationProgress': statistics.get(b['id'])} if fingerprint else {}) for raw, page, updated in rows for b in [json.loads(raw)] if self.folders.available(b['id'])]
 
     def progress(self, book_id, page, layout_version=None):
@@ -273,9 +286,14 @@ class Store:
     def translations(self, book, paragraphs, profile):
         if not paragraphs:
             return {}
+        paragraphs = list(dict.fromkeys(paragraphs))
+        result = {}
         with self.lock:
-            rows = self.db.execute(f"SELECT paragraph,text FROM translations WHERE book=? AND profile=? AND paragraph IN ({','.join('?' for _ in paragraphs)})", (book, profile, *paragraphs)).fetchall()
-        return dict(rows)
+            for start in range(0, len(paragraphs), 900):
+                batch = paragraphs[start:start + 900]
+                rows = self.db.execute(f"SELECT paragraph,text FROM translations WHERE book=? AND profile=? AND paragraph IN ({','.join('?' for _ in batch)})", (book, profile, *batch)).fetchall()
+                result.update(rows)
+        return result
 
     def cache(self, book, paragraph, profile, text, detail=None):
         with self.lock, self.db:

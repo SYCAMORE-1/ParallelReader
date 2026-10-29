@@ -154,6 +154,8 @@ class BookExporter:
         self.thread.start()
 
     def export(self, book, settings, kind='bilingual', reading=False):
+        if book.get('sourceOnly'):
+            return self.store.source_path(book)
         if kind not in {'bilingual', 'translation'}:
             raise ValueError('不支持的 EPUB 格式')
         fingerprint = profile(settings)
@@ -216,6 +218,8 @@ class BookExporter:
                     return
                 try:
                     book = self.store.book(entry['id'])
+                    if book.get('sourceOnly'):
+                        continue
                     completed = self.store.cached_paragraphs(book['id'], fingerprint)
                     if all(p['id'] in completed for p in book['paragraphs']):
                         for kind in ('bilingual', 'translation'):

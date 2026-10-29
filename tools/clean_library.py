@@ -75,13 +75,13 @@ def clean_library(directory, apply=False, prune_history=False):
     before_bytes = sum(path.stat().st_size for path in root.rglob('*') if path.is_file())
     try:
         if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok': raise ValueError('Database is not healthy')
-        for (book_id,) in db.execute('SELECT id FROM books'):
+        for book_id, book_data in db.execute('SELECT id,data FROM books'):
             has_locations = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='book_locations'").fetchone()
             location = db.execute('SELECT folder FROM book_locations WHERE book=?', (book_id,)).fetchone() if has_locations else None
             source = safe_file(root, root / 'books' / location[0] / 'original.epub' if location else root / 'sources' / (book_id + '.epub'))
             if location and not source.parent.exists():
                 continue  # This book's folder has deliberately been moved out.
-            if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest()[:24] != book_id:
+            if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest()[:24] != json.loads(book_data).get('sourceId', book_id):
                 raise ValueError('An original EPUB is missing or damaged')
         trash = obsolete_files(root, db)
         history = db.execute('SELECT COUNT(*) FROM translation_revisions').fetchone()[0]

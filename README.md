@@ -24,6 +24,18 @@ A portable bilingual EPUB reader with contextual translation, proofreading, and 
 - Sentence correspondence highlighting and contextual word lookup without reading ahead.
 - Bookshelf cover views, reading/translation progress, one bookmark per book, and return-to-bookmark.
 - Local translation caching and Chinese-only or bilingual EPUB export, including translated illustrations.
+- Chinese originals and detected translated editions open directly in scrolling mode, without translation requests.
+- The bookshelf archive button creates an AES-256 encrypted ZIP with volumes capped at 500 MiB. Set your own password, download all volumes, then select them together with Import to restore and merge. Identical saved content is skipped; different originals or translations remain separate editions.
+
+### Encrypted bookshelf archives
+
+Click the archive download icon beside the bookshelf view buttons. Enter and confirm your own password to package the entire current shelf as an **AES-256 encrypted ZIP**, automatically split into volumes of at most **500 MiB**. Download and keep every volume. The password is used only for that operation and is not saved in settings, archive manifests or logs.
+
+On the destination, choose **Import books / bookshelf**, select the single `.zip` or every `.zip.0001`, `.zip.0002`, etc. volume from one archive, then enter its password. All files are decrypted and verified before the shelf is merged. Matching original files, saved translations, bookmarks and reading state are skipped; editions with different saved content remain separate, even when titles match. The combined shelf can be archived again. Restored background jobs stay paused and the destination's model settings are retained.
+
+Archives omit model settings and keys, logs, old backups and regenerated EPUB exports. Generated encrypted volumes are kept in `private-transfer/shelf-archives/`; old archives can be removed after downloading. The web importer accepts these encrypted bookshelf archives. The older per-book ZIP tools below use a separate format and restoration workflow.
+
+Chinese originals, EPUBs containing Chinese text and detected translated editions open in scrolling mode with only the original-content layout available. The other three content modes are disabled. Original English editions retain their translation and layout controls.
 
 ### Program and private library are separate
 
@@ -45,6 +57,22 @@ python tools/export_library.py --output private-transfer/.data
 
 The transfer folder is private data. Keep it separate from public program releases. Local model configuration remains in the library; check it before sharing.
 
+### Small book packages for private transfers
+
+Run `pack-books.bat` to create independent book ZIPs in `private-transfer/book-packages-<date>/`. Each includes the original EPUB, translated images, saved translation versions, drafts, progress and bookmarks. Exported EPUBs, backups, logs, the duplicate central database and model settings are excluded. Fresh snapshots include committed SQLite WAL data, so packaging does not require stopping the source reader. Work saved after the snapshot will belong to a later package.
+
+Books larger than the default 500 MiB volume limit become `.zip.0001`, `.zip.0002`, etc. Every volume has a SHA-256 checksum in `library-manifest.json`. Unchanged books produce the same archive bytes, making it easy to upload only changed or new books. For a private GitHub Release, attach the book packages and manifest separately; keep them out of the public program Release.
+
+On the destination computer, close the reader and put the downloaded packages and manifest in one folder. Drag that folder onto `restore-books.bat`. It verifies all selected volumes and restores the downloaded books; it refuses incomplete volumes, corrupt data, unsafe paths and existing copies of the same book. Normal single-file ZIPs can also be extracted directly into `.data/`. Start the reader to import the restored book folders. Configure models on the destination only when new translation is needed.
+
+```powershell
+runtime/python.exe tools/package_library.py --part-mib 500
+runtime/python.exe tools/package_library.py --book "Book title" --output private-transfer/selected-books
+runtime/python.exe tools/restore_library_packages.py --packages private-transfer/selected-books --target .data
+```
+
+`--book` accepts an exact title or book ID and may be repeated. Packaging selects books currently on the shelf; `--include-removed` also includes removed books whose folders remain. Restoring without `--book` skips books for which no volumes were downloaded, but rejects a partially downloaded book. Use a new library or move out the previous copy before restoring an updated copy of an existing book; the tool never overwrites reading progress.
+
 ### Getting started
 
 On Windows 10/11 x64, download this repository using **Code → Download ZIP**, then extract the entire folder and run `start.bat`. The `main` branch includes the portable Python runtime, Pillow and Chinese fonts, so no Python or pip installation is required. Keep the startup window open while reading. Do not run the launcher from inside the ZIP.
@@ -60,7 +88,7 @@ python server.py --open
 
 Import an unencrypted EPUB and select LLM or Azure Translate in Settings. LLM book translation uses the book model configuration. LLM word/context explanations require their own endpoint and model; changing the book service does not change the lookup service.
 
-Click **＋** in the bookshelf to select an EPUB. Each book receives a folder in `.data/books/`, named after its title with a short edition identifier. It contains `original.epub`, translated images, exported EPUBs, and a credential-free `book.sqlite3` transfer snapshot with saved translations, drafts, reading position and bookmarks. The shared `.data/reader.sqlite3` remains the live library database.
+Choose **Import books / bookshelf** to select EPUB files or the encrypted archive volumes described above. The former bookshelf **＋** button is now the archive download button. Each book receives a folder in `.data/books/`, named after its title with a short edition identifier. It contains `original.epub`, translated images, exported EPUBs, and a credential-free `book.sqlite3` transfer snapshot with saved translations, drafts, reading position and bookmarks. The shared `.data/reader.sqlite3` remains the live library database.
 
 To move selected books, close the reader first, copy only their folders into the other installation's `.data/books/`, and start that reader. Copied books are discovered automatically, even without the original shared database. Moving a folder out hides that book from its original bookshelf while retaining its shared database records. Folder labels can be renamed; keep the contents and `book.json` together. Stop the reader before copying either installation. Snapshots refresh periodically while running and are finalised on normal shutdown; for a manual flush, with the reader closed, run `runtime/python.exe tools/organize_library.py --apply`.
 
@@ -123,6 +151,18 @@ This beta supports unencrypted EPUBs. Complex layouts, small or rotated image te
 - 中英文句子对应高亮，双击单词查看不读取后文的语境解释。
 - 封面书架、阅读／翻译进度、每书一个书签，从书架打开时返回书签。
 - 译文缓存保存在本机，可导出包含译图的中文或双语 EPUB。
+- 中文原著和已识别译本无需再次翻译，直接滚动阅读，其余三种内容显示模式置灰。
+- 书架支持自行设置密码的 AES-256 加密分卷 ZIP，每卷最多 500 MiB；可导入并合并书架，不同版本分别保留。
+
+### 网页一键迁移书架
+
+点击书架视图按钮左侧的归档下载图标，自行输入并确认密码，打包整个当前书架。自动生成 **AES-256 加密 ZIP**，每卷最多 **500 MiB**，可逐卷下载，也可点“下载全部分卷”。保存所有分卷及密码；密码只用于当次操作，不保存在配置、归档清单或日志中。
+
+目标电脑点击“导入图书 / 书架”，选择单个 `.zip` 或同一次打包的全部 `.zip.0001`、`.zip.0002` 等分卷，输入密码后恢复。无需停止阅读器；完整解密和校验后合并书架。原书、各版本译文、书签、阅读位置等保存内容相同才跳过；书名相同但原书或保存内容不同的版本都会保留，合并后可再次完整打包。恢复的后台任务暂停，模型设置沿用目标电脑。
+
+归档不包含模型密钥、模型接口配置、日志、旧备份或可重新生成的导出缓存。加密卷保存在工程 `private-transfer/shelf-archives/`，下载后可自行清理旧归档。网页导入支持本阅读器新导出的加密书架归档；下方旧版每书 ZIP 工具使用独立格式和恢复流程。
+
+中文原著、正文已经是中文的 EPUB，以及带翻译元数据的译本会直接进入滚动阅读，四种内容显示中仅原文可用。英文原著仍保留原有阅读和翻译功能。
 
 ### 程序与私人书库分离
 
@@ -144,6 +184,22 @@ python tools/export_library.py --output private-transfer/.data
 
 该工具保留书库资源，清空副本中的 API Key，并暂停未完成任务。迁移副本仍属于私人数据，不应混入公开发布包；分享前请检查其中的本地模型配置。
 
+### 小体积按书迁移包
+
+双击 `pack-books.bat`，在 `private-transfer/book-packages-日期/` 中生成每本书独立的 ZIP。保留原书、译图、各版本译文、初译、进度和书签；省略导出缓存、日志、历史备份、重复的总数据库和模型配置。打包使用包含已提交 WAL 数据的一致快照，不必停止源阅读器；快照之后新增的进度留待下次打包。
+
+单本书超过默认 **500 MiB** 时，自动生成 `.zip.0001`、`.zip.0002` 等分卷，并在 `library-manifest.json` 中保存每卷的 SHA-256 校验值。书内容和状态不变时，重复打包得到相同文件，后续可只上传新增或变化的书。需要放在 GitHub 时，请使用私人数据仓库的 Release；公开程序 Release 继续只放程序。
+
+恢复时先关闭目标阅读器，把下载的书包和清单放在同一文件夹，再将文件夹拖到 `restore-books.bat` 上。工具校验后恢复下载完整的书，缺卷、损坏或已存在同一本书时会停止，不会覆盖旧进度。普通单个 ZIP 也可直接解压到 `.data/`；启动后自动导入书文件夹，模型配置沿用目标程序的设置。
+
+```powershell
+runtime/python.exe tools/package_library.py --part-mib 500
+runtime/python.exe tools/package_library.py --book "完整书名" --output private-transfer/selected-books
+runtime/python.exe tools/restore_library_packages.py --packages private-transfer/selected-books --target .data
+```
+
+`--book` 可写完整书名或编号，可重复选择多本。默认只打包当前书架；`--include-removed` 同时包含已从书架移除但文件夹还在的书。恢复时不指定 `--book`，整本未下载的书会跳过，部分分卷缺失则会报错。更新已有同一本书时，请恢复到新书库或先迁出旧版本。
+
 ### 开始使用
 
 Windows 10/11 64 位电脑可直接在仓库点击 **Code → Download ZIP**，完整解压后双击 `start.bat`。`main` 分支包含便携 Python、Pillow 和中文字体，无需安装 Python 或 pip。阅读时保持启动窗口打开，不要在压缩包内直接运行。
@@ -159,7 +215,7 @@ python server.py --open
 
 导入未加密 EPUB 后，在设置中选择 LLM 或 Azure Translate。图书 LLM 与查词 LLM 分别配置接口和模型，改变图书服务不会改变查词服务。
 
-点击书架中的 **＋** 选择 EPUB。新书会自动在 `.data/books/` 下创建“书名 -- 短编号”文件夹，里面统一保存 `original.epub` 原书、`translated-images/` 译图、`exports/` 导出译本，以及 `book.sqlite3` 单书迁移快照。总数据库 `.data/reader.sqlite3` 继续负责日常读写；单书快照会额外保存该书的译文、初译、校对记录、进度和书签，不携带模型密钥。
+点击“导入图书 / 书架”选择 EPUB 或上述加密书架分卷，书架原来的 **＋** 已改为归档下载按钮。新书会自动在 `.data/books/` 下创建“书名 -- 短编号”文件夹，里面统一保存 `original.epub` 原书、`translated-images/` 译图、`exports/` 导出译本，以及 `book.sqlite3` 单书迁移快照。总数据库 `.data/reader.sqlite3` 继续负责日常读写；单书快照会额外保存该书的译文、初译、校对记录、进度和书签，不携带模型密钥。
 
 **按书搬运：先正常关闭阅读器，只复制想搬走的书名文件夹到另一套程序的 `.data/books/`，再启动。** 目标程序会自动恢复这些书，无需搬走原来的总数据库；没复制的书会留在原处。把某书文件夹移出后，原书架会隐藏它，总数据库中的记录仍保留。文件夹可以改名，但要把里面的文件和 `book.json` 一起搬运。两边阅读器都应先关闭；运行中约每十秒同步快照，正常退出时完成最后同步。需要手动同步时，关闭阅读器后运行 `runtime/python.exe tools/organize_library.py --apply`。
 
@@ -216,7 +272,7 @@ ParallelReader/
 ├─ docs/                   # Public documentation and demo screenshot / 公开文档与示例截图
 ├─ tests/                  # Synthetic tests / 人工构造的测试
 ├─ tools/                  # Public build and private transfer tools / 构建与迁移工具
-├─ runtime/                # Portable Python, Pillow and licenses / 便携运行环境与许可
+├─ runtime/                # Portable Python, Pillow, ZIP encryption and licenses / 便携运行环境与许可
 ├─ start.bat
 ├─ start-mobile.bat
 ├─ check-portable.bat

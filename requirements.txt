@@ -1,3 +1,4 @@
 # Python 3.10+; image translation uses Pillow to typeset Chinese inside images.
 Pillow>=10.0
+pyzipper>=0.4.0,<0.5
 

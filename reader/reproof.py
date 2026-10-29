@@ -97,6 +97,13 @@ class Reproofreader:
         from reader.translation import profile
         current = profile(self.store.settings())
         for job in self.jobs.values():
+            try:
+                source_only = self.store.book(job['book']).get('sourceOnly')
+            except KeyError:
+                source_only = True
+            if source_only and job['state'] in {'queued', 'running'}:
+                job.update(state='paused', reason='本书已可直接阅读，无需校对。')
+                self.save(job)
             if job['state'] in {'queued', 'running'} and job['profile'] != current:
                 job.update(state='paused', reason='模型设置已变化，原校对任务已暂停')
                 self.save(job)

@@ -25,6 +25,11 @@ def log(message):
 
 
 def copy_runtime(destination):
+    bundled = ROOT / 'runtime'
+    if (bundled / 'python.exe').is_file():
+        subprocess.run([str(bundled / 'python.exe'), '-c', 'import PIL, pyzipper; from Cryptodome.Cipher import AES'], check=True)
+        shutil.copytree(bundled, destination, ignore=SKIP)
+        return
     home = Path(sys.executable).resolve().parent
     tag = f'python{sys.version_info.major}{sys.version_info.minor}'
     destination.mkdir()
@@ -43,10 +48,12 @@ def copy_runtime(destination):
     packages = destination / 'Lib' / 'site-packages'
     packages.mkdir(parents=True)
     pillow = importlib.metadata.distribution('Pillow')
-    for name in sorted({str(path).replace('\\', '/').split('/')[0] for path in pillow.files}):
-        source = Path(pillow.locate_file(name))
-        if source.is_dir():
-            shutil.copytree(source, packages / name, ignore=SKIP)
+    for dependency in ['Pillow', 'pyzipper', 'pycryptodomex']:
+        distribution = importlib.metadata.distribution(dependency)
+        for name in sorted({str(path).replace('\\', '/').split('/')[0] for path in distribution.files}):
+            source = Path(distribution.locate_file(name))
+            if source.is_dir():
+                shutil.copytree(source, packages / name, ignore=SKIP)
     (destination / (tag + '._pth')).write_text(
         f'{tag}.zip\nDLLs\nLib/site-packages\n..\nimport site\n', encoding='ascii')
     shutil.copy2(home / 'LICENSE.txt', destination / 'LICENSE-Python.txt')
@@ -67,7 +74,7 @@ def build(destination, include_data=False, make_zip=False):
     log('Copying application sources and resources...')
     for name in ['reader', 'public', 'tools', 'tests', 'docs']:
         shutil.copytree(ROOT / name, destination / name, ignore=SKIP)
-    for name in ['server.py', 'start.bat', 'start-mobile.bat', 'start.ps1', 'README.md', 'requirements.txt', '.gitignore', '.gitattributes']:
+    for name in ['server.py', 'start.bat', 'start-mobile.bat', 'start.ps1', 'pack-books.bat', 'restore-books.bat', 'README.md', 'requirements.txt', '.gitignore', '.gitattributes']:
         shutil.copy2(ROOT / name, destination / name)
     font_path = destination / 'public' / 'fonts' / 'reader-sans.ttf'
     if not font_path.is_file():
@@ -75,7 +82,7 @@ def build(destination, include_data=False, make_zip=False):
         from fontTools.ttLib import TTFont
         font = TTFont(str(destination / 'public' / 'fonts' / 'reader-sans.woff2'), recalcTimestamp=False)
         font.flavor = None; font.save(font_path); font.close()
-    log('Bundling isolated Python and Pillow...')
+    log('Bundling isolated Python, Pillow and ZIP encryption dependencies...')
     copy_runtime(destination / 'runtime')
     statistics = {}
     (destination / 'check-portable.bat').write_text(

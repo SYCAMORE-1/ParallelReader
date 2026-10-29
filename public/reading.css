@@ -473,3 +473,11 @@ body:not(.immersive) .reader{padding-top:14px}
 #translation-source-dialog label{display:grid;gap:8px;margin:16px 0;font-size:14px}
 #translation-source-select{width:100%;max-width:100%;font-size:14px;padding:10px}
 #translation-source-dialog .dialog-actions{flex-wrap:wrap;gap:8px}
+
+.column-switch button:disabled{opacity:.32;cursor:default;filter:grayscale(1)}
+.source-only .flow-switch:before{transform:none;width:100%;left:0}
+.source-only .flow-switch{grid-template-columns:1fr}
+.archive-downloads{display:grid;gap:10px;margin:16px 0;max-height:35vh;overflow:auto}
+.archive-downloads a{overflow-wrap:anywhere;color:var(--accent,#315c44);font-size:13px;padding:10px;border:1px solid var(--line,#ccc);border-radius:8px;text-decoration:none}
+#archive-progress{width:100%;height:8px}
+#archive-status{font-size:13px;line-height:1.6;overflow-wrap:anywhere}

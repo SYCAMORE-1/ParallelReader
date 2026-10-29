@@ -19,6 +19,10 @@ BOOK_TABLES = {
 }
 
 
+def image_cache_alias(book_id, origin):
+    return 'image-translation:' + hashlib.sha256(json.dumps([book_id, origin]).encode()).hexdigest()
+
+
 def folder_name(book):
     title = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', book.get('title') or 'Untitled')
     title = re.sub(r'\s+', ' ', title).strip(' .')[:64].rstrip(' .') or 'Untitled'
@@ -187,11 +191,15 @@ class BookFolders:
             if path.resolve() not in referenced: checked(self.root, path).unlink()
 
     def state_rows(self, bid):
+        return self.portable_rows(self.store.db, bid)
+
+    @staticmethod
+    def portable_rows(db, bid):
         result = {}
         for table, clause in BOOK_TABLES.items():
-            if not self.store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
                 continue
-            rows = self.store.db.execute('SELECT * FROM ' + table + ' WHERE ' + clause, (bid,)).fetchall()
+            rows = db.execute('SELECT * FROM ' + table + ' WHERE ' + clause, (bid,)).fetchall()
             if table == 'book_translation_jobs':
                 rows = [(*r[:3], 'paused' if r[3] in {'running', 'queued'} else r[3], *r[4:]) for r in rows]
             elif table in {'language_cache', 'reproof_jobs'}:
@@ -210,9 +218,24 @@ class BookFolders:
         profiles = set()
         for table in ['translations', 'translation_drafts', 'book_translation_jobs']:
             index = 1 if table == 'book_translation_jobs' else 2
-            profiles.update(row[index] for row in result[table])
-        result['translation_profiles'] = [r for r in self.store.db.execute('SELECT * FROM translation_profiles') if r[0] in profiles]
+            profiles.update(row[index] for row in result.get(table, []))
+        result['translation_profiles'] = [r for r in db.execute('SELECT * FROM translation_profiles') if r[0] in profiles]
         return result
+
+    @staticmethod
+    def write_snapshot(db, bid, target):
+        connection = sqlite3.connect(target)
+        try:
+            with connection:
+                for table, rows in BookFolders.portable_rows(db, bid).items():
+                    schema = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
+                    connection.execute(schema)
+                    if rows:
+                        connection.executemany('INSERT INTO ' + table + ' VALUES (' + ','.join('?' for _ in rows[0]) + ')', rows)
+            if connection.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                raise RuntimeError('单书迁移快照校验失败')
+        finally:
+            connection.close()
 
     def flush(self, force=False):
         if not force and time.monotonic() - self.last_flush < 10:
@@ -226,18 +249,7 @@ class BookFolders:
                 target = checked(self.root, directory / 'book.sqlite3')
                 temporary = checked(self.root, directory / 'book.sqlite3.tmp')
                 temporary.unlink(missing_ok=True)
-                connection = sqlite3.connect(temporary)
-                try:
-                    with connection:
-                        for table, rows in self.state_rows(bid).items():
-                            schema = self.store.db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
-                            connection.execute(schema)
-                            if rows:
-                                connection.executemany('INSERT INTO ' + table + ' VALUES (' + ','.join('?' for _ in rows[0]) + ')', rows)
-                    if connection.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
-                        raise RuntimeError('单书迁移快照校验失败')
-                finally:
-                    connection.close()
+                self.write_snapshot(self.store.db, bid, temporary)
                 temporary.replace(target)
                 self.dirty.discard(bid)
             self.last_flush = time.monotonic()
@@ -247,8 +259,6 @@ class BookFolders:
         if not snapshot.is_file():
             raise ValueError('书文件夹缺少 book.sqlite3：' + directory.name)
         source = checked(self.root, directory / 'original.epub')
-        if source.is_file() and hashlib.sha256(source.read_bytes()).hexdigest()[:24] != bid:
-            raise ValueError('书文件夹中的原书与编号不匹配')
         connection = sqlite3.connect(snapshot.as_uri() + '?mode=ro', uri=True)
         try:
             if connection.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
@@ -256,6 +266,9 @@ class BookFolders:
             data = connection.execute('SELECT id,data,page,updated FROM books').fetchall()
             if len(data) != 1 or data[0][0] != bid or json.loads(data[0][1])['id'] != bid:
                 raise ValueError('书文件夹中的书籍信息不一致')
+            source_id = json.loads(data[0][1]).get('sourceId', bid)
+            if source.is_file() and hashlib.sha256(source.read_bytes()).hexdigest()[:24] != source_id:
+                raise ValueError('书文件夹中的原书与编号不匹配')
             # Do not import SQL, global settings, model credentials or tasks
             # for other books from a copied database.
             incoming = {}

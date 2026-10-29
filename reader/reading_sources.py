@@ -30,6 +30,8 @@ def sources(store, book, settings):
 
 def selection(store, book, settings):
     current = profile(settings)
+    if book.get('sourceOnly'):
+        return {'book': book['id'], 'configurationProfile': current, 'selectedProfile': current, 'sources': [], 'selectionRequired': False, 'sourceOnly': True}
     available = sources(store, book, settings)
     with store.lock:
         row = store.db.execute('SELECT source FROM reading_sources WHERE book=? AND configuration=?', (book['id'], current)).fetchone()
@@ -57,6 +59,8 @@ def choose(store, book, settings, source, configuration):
 
 def translations(store, book, ids, settings):
     state = selection(store, book, settings)
+    if book.get('sourceOnly'):
+        return state, {pid: {'text': book['paragraphs'][pid]['text'], 'profile': state['selectedProfile']} for pid in ids}
     profiles = list(dict.fromkeys([state['selectedProfile'], state['configurationProfile']]))
     result = {}
     for fingerprint in reversed(profiles):

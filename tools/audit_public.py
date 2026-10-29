@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXCLUDED = {'.git', '.data', 'dist', 'test-results', '__pycache__', '.venv', 'runtime', 'books'}
+EXCLUDED = {'.git', '.data', 'dist', 'test-results', '__pycache__', '.venv', 'runtime', 'books', 'private-transfer', 'private-library'}
 TEXT = {'.py', '.js', '.cjs', '.html', '.css', '.md', '.json', '.ps1', '.bat', '.txt'}
 BOOK_FILES = {'.epub', '.mobi', '.azw', '.azw3', '.fb2', '.cbz', '.cbr', '.sqlite3', '.db'}
 IPV4 = re.compile(r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])')

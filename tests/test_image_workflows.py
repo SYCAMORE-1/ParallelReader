@@ -140,6 +140,51 @@ class ImageWorkflowTests(unittest.TestCase):
 
 
 class ImageRenderTests(unittest.TestCase):
+    def test_tiny_imprint_is_typeset_at_readable_resolution_without_losing_text(self):
+        image = Image.new('RGB', (51, 63), 'white')
+        draw = ImageDraw.Draw(image)
+        draw.polygon([(3, 3), (22, 12), (47, 4), (32, 19), (13, 17)], fill='black')
+        draw.line([(31, 16), (40, 31), (44, 40)], fill='black', width=2)
+        tiny = ImageFont.truetype(str(chinese_font()), 4)
+        draw.text((17, 28), 'SMALL', font=tiny, fill='black')
+        draw.text((15, 35), 'BOOKS', font=tiny, fill='black')
+        draw.line((1, 52, 49, 52), fill='black')
+        draw.text((19, 56), 'LABEL', font=tiny, fill='black')
+        stream = io.BytesIO(); image.save(stream, format='PNG'); data = stream.getvalue()
+        value = {'blocks': [
+            {'source': 'SMALL\nBOOKS', 'translation': '小型出版社\n图书', 'bbox': [320, 420, 680, 680]},
+            {'source': 'LABEL', 'translation': '出版品牌', 'bbox': [380, 850, 620, 950]},
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            output = render_image(data, value, directory)
+            with Image.open(Path(directory) / output['file']) as actual:
+                self.assertGreaterEqual(actual.width, 320)
+                self.assertEqual(actual.width * image.height, actual.height * image.width)
+                self.assertEqual((output['sourceWidth'], output['sourceHeight']), image.size)
+                self.assertEqual(len(output['regions']), 2)
+                scaled = image.resize(actual.size, Image.Resampling.LANCZOS)
+                self.assertEqual(actual.crop((0, 0, actual.width, 120)).tobytes(),
+                                 scaled.crop((0, 0, actual.width, 120)).tobytes())
+                self.assertNotEqual(actual.tobytes(), scaled.tobytes())
+                factor = output['scale']
+                art = (38 * factor, 32 * factor, 47 * factor, 44 * factor)
+                self.assertEqual(actual.crop(art).tobytes(), scaled.crop(art).tobytes())
+            cached = render_image(data, value, directory)
+            self.assertEqual(cached['digest'], output['digest'])
+            self.assertEqual(cached['scale'], output['scale'])
+        self.assertEqual(value['blocks'][1]['translation'], '出版品牌')
+
+    def test_tiny_retained_logo_does_not_change_size_or_pixels(self):
+        image = Image.new('RGB', (51, 63), 'white')
+        ImageDraw.Draw(image).rectangle((5, 5, 40, 20), fill='black')
+        stream = io.BytesIO(); image.save(stream, format='PNG')
+        value = {'blocks': [{'source': 'ABC123', 'translation': 'ABC123', 'bbox': [10, 10, 11, 11]}]}
+        with tempfile.TemporaryDirectory() as directory:
+            output = render_image(stream.getvalue(), value, directory)
+            with Image.open(Path(directory) / output['file']) as actual:
+                self.assertEqual(actual.size, image.size)
+                self.assertEqual(actual.tobytes(), image.tobytes())
+
     def test_clipped_line_uses_full_glyphs_instead_of_a_punctuation_seed(self):
         image = Image.new('RGB', (420, 220), 'white')
         draw = ImageDraw.Draw(image)

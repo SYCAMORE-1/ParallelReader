@@ -1,2 +1,4 @@
 Python 3.10.6 Windows AMD64
 Pillow 11.1.0
+pyzipper 0.4.0
+pycryptodomex 3.24.1

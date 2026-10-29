@@ -155,11 +155,15 @@ export class ReadingTools {
   }
 
   setColumns(mode) {
+    const sourceOnly = !!this.state.book?.sourceOnly;
+    if (sourceOnly) mode = 'original';
     if (!['both', 'original', 'translation', 'follow'].includes(mode)) mode = 'both';
     this.columns = mode; $('#reader').dataset.columns = mode;
-    localStorage.setItem('parallel.columns', mode);
+    if (!sourceOnly) localStorage.setItem('parallel.columns', mode);
     for (const [id, value] of [['#show-both', 'both'], ['#show-original', 'original'], ['#show-translation', 'translation'], ['#show-follow', 'follow']]) {
       $(id).setAttribute('aria-pressed', String(mode === value));
+      $(id).disabled = sourceOnly && value !== 'original';
+      $(id).title = sourceOnly ? (value === 'original' ? '直接阅读' : '本书可直接阅读，无需翻译') : $(id).getAttribute('aria-label');
     }
     $('.column-switch').style.setProperty('--selection-index', ['original', 'translation', 'both', 'follow'].indexOf(mode));
     this.closeWord();
@@ -265,7 +269,7 @@ export class ReadingTools {
   }
 
   preparePage() {
-    if (!this.state.book || !['both', 'follow'].includes(this.columns)) return;
+    if (!this.state.book || this.state.book.sourceOnly || !['both', 'follow'].includes(this.columns)) return;
     for (const row of document.querySelectorAll('.paragraph-row')) {
       const pid = Number(row.dataset.pid);
       const item = this.decorate(pid, this.state.items[pid]);
@@ -350,6 +354,7 @@ export class ReadingTools {
   }
 
   async showWord(pid, word, x, y, offset = null) {
+    if (this.state.book?.sourceOnly) return;
     const request = ++this.wordRequest, epoch = this.state.epoch;
     this.word = { pid, word, x, y, offset }; $('#word-popover').hidden = false;
     $('#word-title').textContent = word; $('#word-lemma').textContent = ''; $('#word-pos').hidden = true;

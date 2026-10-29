@@ -17,6 +17,13 @@ from tools.audit_public import audit_public
 
 
 class PublicLayoutTests(unittest.TestCase):
+    def test_private_package_outputs_are_excluded_from_public_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private = root / 'private-transfer'; private.mkdir()
+            (private / 'original.epub').write_bytes(b'private-data')
+            (private / 'library-manifest.json').write_text('{}')
+            self.assertTrue(audit_public(root)['ok'])
     def test_new_library_has_no_endpoint_or_model_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
             store = Store(directory)

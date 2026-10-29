@@ -26,6 +26,7 @@
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><path d="M4 4h16v5H4zM6 9v12h12V9M12 11v7m-3-3 3 3 3-3"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
@@ -34,12 +35,12 @@
   </defs></svg>
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="/" aria-label="Parallel 书架"><span class="brand-icon"><svg><use href="#i-book"/></svg></span><span>parallel<span class="brand-dot">.</span><small>让阅读，跨越语言</small></span></a>
-    <button class="import-button" id="import-button"><svg><use href="#i-plus"/></svg>导入 EPUB</button>
-    <input id="file-input" type="file" accept=".epub,application/epub+zip" hidden>
+    <button class="import-button" id="import-button"><svg><use href="#i-plus"/></svg>导入图书 / 书架</button>
+    <input id="file-input" type="file" multiple hidden>
     <div class="side-tabs" role="tablist" aria-label="导航"><button id="tab-library" class="active" role="tab" aria-selected="true">我的书架</button><button id="tab-toc" role="tab" aria-selected="false" disabled>章节目录</button></div>
     <div class="sidebar-content" id="library-panel">
       <div class="library-view-controls" role="group" aria-label="书架工具">
-        <button id="library-add" class="library-add" type="button" title="添加图书" aria-label="添加图书"><svg aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <button id="library-archive" class="library-add" type="button" title="加密打包整个书架" aria-label="加密打包整个书架"><svg aria-hidden="true"><use href="#i-archive"/></svg></button>
         <button id="library-view-list" type="button" title="列表视图" aria-label="列表视图" aria-pressed="false"><svg aria-hidden="true"><use href="#i-list"/></svg></button>
         <button id="library-view-covers" type="button" title="两列封面" aria-label="两列封面缩略视图" aria-pressed="true"><svg aria-hidden="true"><use href="#i-grid"/></svg></button>
         <button id="library-view-covers3" type="button" title="三列封面" aria-label="三列封面缩略视图" aria-pressed="false"><svg aria-hidden="true"><use href="#i-grid3"/></svg></button>
@@ -110,6 +111,14 @@
   </div>
   <div id="immersive-navigation" class="immersive-navigation" aria-label="沉浸阅读翻页" hidden><button id="immersive-prev" aria-label="上一页" title="上一页（←）"><svg class="rotate"><use href="#i-arrow"/></svg></button><button id="immersive-next" aria-label="下一页" title="下一页（→）"><svg><use href="#i-arrow"/></svg></button></div>
   <dialog id="translation-source-dialog" aria-labelledby="translation-source-title"><div class="dialog-heading"><h2 id="translation-source-title">本地已有译文</h2></div><p id="translation-source-description"></p><label>阅读译文<select id="translation-source-select"></select></label><div class="dialog-actions"><button id="translate-with-current" class="secondary" type="button">使用当前翻译配置</button><button id="use-saved-translation" class="primary" type="button">使用已保存译文</button></div></dialog>
+  <dialog id="archive-dialog" aria-labelledby="archive-title"><form id="archive-form">
+    <div class="dialog-heading"><h2 id="archive-title">加密打包书架</h2><button id="archive-close" class="icon-button" type="button" aria-label="关闭归档窗口"><svg><use href="#i-close"/></svg></button></div>
+    <p id="archive-description">自动分卷，每卷最多 500 MiB。请自行设置密码，并在恢复时输入同一密码。</p>
+    <div id="archive-password-fields"><label>压缩 / 解压密码<input id="archive-password" type="password" autocomplete="off" required maxlength="512"></label><label id="archive-confirm-label">再次输入密码<input id="archive-confirm" type="password" autocomplete="off" required maxlength="512"></label></div>
+    <p id="archive-status" role="status"></p><progress id="archive-progress" value="0" max="100" hidden aria-label="归档进度"></progress>
+    <div id="archive-downloads" class="archive-downloads"></div>
+    <div class="dialog-actions"><button id="archive-download-all" class="secondary" type="button" hidden>下载全部分卷</button><button id="archive-submit" class="primary" type="submit">开始加密打包</button></div>
+  </form></dialog>
   <dialog id="settings-dialog"><form id="settings-form">
 <div class="dialog-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h2>翻译服务设置</h2></div><button type="button" class="icon-button close-dialog" aria-label="关闭设置"><svg><use href="#i-close"/></svg></button></div>
 <label>图书翻译<select name="translationProvider" id="translation-provider"><option value="llm">LLM</option><option value="microsoft">Azure Translate</option></select></label>
@@ -137,6 +146,6 @@
 </form></dialog>
   <aside id="word-popover" class="word-popover" role="dialog" aria-modal="false" aria-labelledby="word-title" hidden><div class="word-popover-heading"><h2 id="word-title"></h2><button id="close-word" class="icon-button" aria-label="关闭单词解释"><svg><use href="#i-close"/></svg></button></div><div class="word-meta"><span id="word-lemma"></span><span id="word-pos" class="word-pos" hidden></span></div><p id="word-status" role="status"></p><div id="word-definitions" aria-live="polite" hidden><section class="word-definition"><h3>基本词义</h3><p id="word-basic"></p></section><section class="word-definition contextual-definition"><h3>文中含义</h3><p id="word-meaning"></p></section><p id="word-note"></p></div><button id="retry-word" class="secondary" hidden>重新查询</button><small id="word-context">由 Azure Translate 提供</small></aside>
   <div id="toast" class="toast" role="status" hidden></div>
-  <div id="drop-overlay" class="drop-overlay" hidden><svg><use href="#i-upload"/></svg><h2>把故事放在这里</h2><p>松开鼠标，导入 EPUB</p></div>
+  <div id="drop-overlay" class="drop-overlay" hidden><svg><use href="#i-upload"/></svg><h2>把故事放在这里</h2><p>松开鼠标，导入 EPUB 或书架的全部 ZIP 分卷</p></div>
 </body>
 </html>

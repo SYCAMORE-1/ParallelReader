@@ -20,6 +20,7 @@ export class TranslationSources {
     this.button.title = source ? this.label(source) + ' · 点击切换阅读译文；缺失部分使用当前翻译服务' : '当前配置尚无已保存译文；点击查看本地译文';
   }
   async resolve(book, { force = false, epoch = this.state.epoch, preferred = null } = {}) {
+    if (book.sourceOnly) { this.button.hidden = true; this.state.readingChoicePending = false; return true; }
     this.state.readingChoicePending = true;
     const value = await this.api(`/api/books/${book.id}/translation-sources`);
     if (epoch !== this.state.epoch || book.id !== this.state.book?.id) return false;

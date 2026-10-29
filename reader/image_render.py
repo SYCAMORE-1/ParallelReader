@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-RENDER_VERSION = 'localized-text-png-v7'
+RENDER_VERSION = 'localized-text-png-v8-small-image-art'
 
 
 def chinese_font():
@@ -28,7 +28,7 @@ def background(image):
     return tuple(round(sum(pixel[channel] for pixel in colors) / len(colors)) for channel in range(3))
 
 
-def text_region(image, box):
+def text_region(image, box, max_glyph_height=None, protected=None):
     """Complete glyphs cut by approximate model boxes, excluding long diagram lines."""
     from PIL import Image, ImageChops
     width, height = image.size
@@ -52,8 +52,11 @@ def text_region(image, box):
         x0 = x1 = seed % cw
         y0 = y1 = seed // cw
         area = 0
+        positions = [] if protected is not None else None
         while stack:
             pos = stack.pop()
+            if positions is not None:
+                positions.append(pos)
             x, y = pos % cw, pos // cw
             x0, x1, y0, y1 = min(x0, x), max(x1, x), min(y0, y), max(y1, y)
             area += 1
@@ -63,7 +66,12 @@ def text_region(image, box):
                     stack.append(neighbor)
         w, h = x1 - x0 + 1, y1 - y0 + 1
         cx, cy = expanded[0] + (x0 + x1) / 2, expanded[1] + (y0 + y1) / 2
-        if area < 3 or w > max(12, h * 2.5) or h > max(60, w * 12) or area > cw * ch * .5 or area / (w * h) < .2:
+        if max_glyph_height is not None and (h > max_glyph_height or w > max(12, h * 10)):
+            if protected is not None:
+                for pos in positions:
+                    protected.putpixel((expanded[0] + pos % cw, expanded[1] + pos // cw), 255)
+            continue  # Keep nearby art and rules out of the glyph selection.
+        if area < 3 or w > max(12, h * (10 if max_glyph_height is not None else 2.5)) or h > max(60, w * 12) or area > cw * ch * .5 or area / (w * h) < .2:
             continue
         if w > cw * .7 and h > ch * .6:
             continue  # A surrounding rectangular frame is not a glyph.
@@ -96,8 +104,9 @@ def text_region(image, box):
         nearby = [item for item in nearby if item not in additions]
     if not components:
         return box
-    refined = (max(0, min(c[0] for c in components) - 2), max(0, min(c[1] for c in components) - 2),
-               min(width, max(c[2] for c in components) + 2), min(height, max(c[3] for c in components) + 2))
+    margin = 1 if max_glyph_height is not None else 2
+    refined = (max(0, min(c[0] for c in components) - margin), max(0, min(c[1] for c in components) - margin),
+               min(width, max(c[2] for c in components) + margin), min(height, max(c[3] for c in components) + margin))
     # A few specks are insufficient evidence to shrink an entire model box.
     if (refined[2] - refined[0]) * (refined[3] - refined[1]) < (right - left) * (bottom - top) * .12:
         return box
@@ -125,7 +134,7 @@ def render_image(data, result, directory):
     from reader.image_regions import preserve_codes, qr_regions
     result = preserve_codes(data, result)
     try:
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw, ImageFont, ImageFilter
     except ImportError as exc:
         raise RuntimeError('生成中文译图需要 Pillow，请安装 requirements.txt 中的依赖') from exc
     digest = hashlib.sha256(data + json.dumps([RENDER_VERSION, result['blocks']], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -142,9 +151,22 @@ def render_image(data, result, directory):
             source.paste(rgba, mask=rgba.getchannel('A'))
         else:
             source.paste(original.convert('RGB'))
+    # Tiny imprints can contain legible Latin labels only a few pixels high.
+    # Chinese needs more pixels per glyph. Render a higher-resolution variant
+    # instead of shrinking below the readable font floor or dropping words.
+    # Original EPUB bytes and normalized text coordinates remain unchanged.
+    source_width, source_height = source.size
+    native_source = source
+    changed_text = any(block['source'].strip() != block['translation'].strip() for block in result['blocks'])
+    scale = min(8, max(1, math.ceil(320 / min(source.size)))) if changed_text and max(source.size) < 320 else 1
+    if scale > 1:
+        source = source.resize((source.width * scale, source.height * scale), Image.Resampling.LANCZOS)
+    dimensions = {'width': source.width, 'height': source.height,
+                  'sourceWidth': source_width, 'sourceHeight': source_height, 'scale': scale}
     if target.is_file():
-        return {'file': 'translated-images/' + filename, 'digest': digest, 'width': source.width, 'height': source.height}
+        return {'file': 'translated-images/' + filename, 'digest': digest, **dimensions}
     output = source.copy()
+    protected = Image.new('L', (source_width, source_height), 0) if scale > 1 else None
     draw = ImageDraw.Draw(output)
     font_path = chinese_font() if result['blocks'] else None
     regions = []
@@ -154,11 +176,14 @@ def render_image(data, result, directory):
         bbox = block.get('bbox')
         if not isinstance(bbox, list) or len(bbox) != 4 or not 0 <= bbox[0] < bbox[2] <= 1000 or not 0 <= bbox[1] < bbox[3] <= 1000:
             raise RuntimeError(f'图片第 {index + 1} 处文字尚未准确定位，请重试图片校对')
-        box = (round(bbox[0] * source.width / 1000), round(bbox[1] * source.height / 1000),
-               round(bbox[2] * source.width / 1000), round(bbox[3] * source.height / 1000))
+        box = (round(bbox[0] * source_width / 1000), round(bbox[1] * source_height / 1000),
+               round(bbox[2] * source_width / 1000), round(bbox[3] * source_height / 1000))
         if box[2] <= box[0] or box[3] <= box[1]:
             raise RuntimeError('文字定位区域过小，请重新识别')
-        box = text_region(source, box)
+        lines_in_source = max(1, len([line for line in block['source'].splitlines() if line.strip()]))
+        max_glyph_height = max(4, (box[3] - box[1]) / lines_in_source * 1.5) if scale > 1 else None
+        box = text_region(native_source, box, max_glyph_height=max_glyph_height, protected=protected)
+        box = tuple(coordinate * scale for coordinate in box)
         color = background(source.crop(box))
         available_w, available_h = box[2] - box[0], box[3] - box[1]
         chosen = None
@@ -182,6 +207,11 @@ def render_image(data, result, directory):
             draw.text((box[0], y - offset), line, font=font, fill=ink)
             y += line_height
         regions.append(list(box))
+    if protected is not None and protected.getbbox():
+        # Preserve the complete graphic, including its antialiased boundary,
+        # when a tightly packed imprint puts a leg/flourish beside a label.
+        mask = protected.filter(ImageFilter.MaxFilter(3)).resize(source.size, Image.Resampling.NEAREST)
+        output.paste(source, (0, 0), mask)
     for left, top, right, bottom in qr_regions(data):
         box = (int(left * source.width / 1000), int(top * source.height / 1000),
                min(source.width, math.ceil(right * source.width / 1000)), min(source.height, math.ceil(bottom * source.height / 1000)))
@@ -189,4 +219,4 @@ def render_image(data, result, directory):
     temporary = target.with_suffix('.tmp')
     output.save(temporary, format='PNG', optimize=True)
     temporary.replace(target)
-    return {'file': 'translated-images/' + filename, 'digest': digest, 'width': source.width, 'height': source.height, 'regions': regions}
+    return {'file': 'translated-images/' + filename, 'digest': digest, **dimensions, 'regions': regions}

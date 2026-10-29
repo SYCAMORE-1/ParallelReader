@@ -2,6 +2,7 @@ import { ReadingTools, readingTop } from './reading-tools.js';
 import { ReproofTools } from './reproof-tools.js';
 import { ImageTranslationTools } from './image-translation.js';
 import { TranslationSources } from './translation-sources.js';
+import { ArchiveTools } from './archive-tools.js';
 history.scrollRestoration = 'manual';
 const $ = (selector) => document.querySelector(selector);
 const state = { book: null, page: 0, selected: null, profile: '', settings: {}, library: [], items: {}, cache: new Map(), epoch: 0, timer: null, prefetch: localStorage.getItem('parallel.prefetch') !== 'false', windowChain: Promise.resolve(), progressChain: Promise.resolve() };
@@ -35,6 +36,7 @@ const reading = new ReadingTools({ state, api, icon, element, selectParagraph, u
 const reproof = new ReproofTools({ state, api, toast, report, reading, refresh: () => { clearTimeout(state.timer); poll(state.epoch); } });
 const imageTranslation = new ImageTranslationTools({ state, api, element });
 const translationSources = new TranslationSources({ state, api });
+const archiveTools = new ArchiveTools({ api, report, refresh: async () => { state.library = await api('/api/books'); renderLibrary(); setTab('library'); } });
 $('#translation-source-button').onclick = async () => {
   if (!state.book) return;
   ++state.epoch; clearTimeout(state.timer);
@@ -47,14 +49,18 @@ $('#translation-source-button').onclick = async () => {
 let flow = localStorage.getItem('parallel.flow') === 'scroll' ? 'scroll' : 'pages';
 let renderStart = 0, renderEnd = 0, pageBackward = false, scrollFrame = 0, progressTimer, lastScrollY = 0, scrollRestoring = false;
 function syncFlow() {
+  document.body.classList.toggle('source-only', !!state.book?.sourceOnly);
+  $('#flow-pages').hidden = !!state.book?.sourceOnly;
+  $('#flow-pages').disabled = !!state.book?.sourceOnly;
   document.body.dataset.flow = flow;
   for (const name of ['pages', 'scroll']) $('#flow-' + name).setAttribute('aria-pressed', String(flow === name));
-  $('.flow-switch').style.setProperty('--selection-index', flow === 'scroll' ? 1 : 0);
+  $('.flow-switch').style.setProperty('--selection-index', flow === 'scroll' && !state.book?.sourceOnly ? 1 : 0);
   $('#scroll-status').hidden = flow !== 'scroll';
 }
 syncFlow();
 requestAnimationFrame(() => requestAnimationFrame(() => { $('.reading-mode-controls').dataset.ready = 'true'; }));
 for (const name of ['pages', 'scroll']) $('#flow-' + name).onclick = () => {
+  if (state.book?.sourceOnly) return;
   if (name === flow) return;
   flow = name; localStorage.setItem('parallel.flow', flow); syncFlow();
   if (state.book) { saveProgress(); ++state.epoch; reading.resetPage(); renderPage(); if (flow === 'pages') scrollToReadingPage(); scheduleWindow(); }
@@ -119,7 +125,7 @@ function addPage(index, prepend = false) {
     const paragraph = state.book.paragraphs[pid];
     const row = element('section', 'paragraph-row' + (paragraph.kind === 'heading' ? ' heading' : ''));
     row.dataset.pid = pid; row.dataset.page = index; row.setAttribute('aria-label', '段落 ' + (pid + 1));
-    const original = element('div', 'original'); original.lang = state.book.language || 'en'; original.title = '单击句子对照；双击单词查看语境释义';
+    const original = element('div', 'original'); original.lang = state.book.language || 'en'; original.title = state.book.sourceOnly ? '直接阅读' : '单击句子对照；双击单词查看语境释义';
     const translation = element('div', 'translation placeholder'); translation.lang = state.settings.targetLanguage === '日本語' ? 'ja' : 'zh';
     row.append(original, translation); fragment.append(row);
     const cached = state.cache.get(`${state.book.id}:${state.readingProfile || state.profile}:${pid}`); if (cached) state.items[pid] = cached;
@@ -315,6 +321,7 @@ function updateLibraryProgress(book) {
   translationBar.querySelector('progress').value = known ? translated.percent : 0;
   translationBar.querySelector('progress').setAttribute('aria-valuetext', known ? translationLabel : '正在读取');
   translationBar.querySelector('.library-percent').textContent = translationLabel;
+  translationBar.hidden = !!book.sourceOnly;
   translationBar.dataset.mode = known && translated.mode === 'reproof' ? 'reproof' : 'translation';
   translationBar.querySelector('progress').setAttribute('aria-label', book.title + (translationBar.dataset.mode === 'reproof' ? ' 本轮全书校对进度' : ' 翻译 / 校对进度'));
   const reviewStates = { queued: '等待校对', running: '校对中', paused: '已暂停', failed: '部分未完成', completed: '本轮已完成' };
@@ -393,7 +400,10 @@ async function openBook(id, provided, { atBookmark = false } = {}) {
   const bookmarkPage = book.bookmark?.page;
   const targetPage = atBookmark && Number.isInteger(bookmarkPage) && bookmarkPage >= 0 && bookmarkPage < book.pages.length ? bookmarkPage : book.currentPage || 0;
   state.book = book; state.page = targetPage; state.selected = null; state.items = {}; reading.resetPage();
-  $('#translation-source-button').hidden = false; $('#translation-source-button').textContent = '正在读取本地译文…';
+  flow = book.sourceOnly ? 'scroll' : localStorage.getItem('parallel.flow') === 'scroll' ? 'scroll' : 'pages';
+  syncFlow(); reading.setColumns(localStorage.getItem('parallel.columns') || 'both');
+  $('#prefetch-toggle').hidden = !!book.sourceOnly;
+  $('#translation-source-button').hidden = !!book.sourceOnly; $('#translation-source-button').textContent = '正在读取本地译文…';
   reproof.reset();
   ++bulkRevision; bookTranslation = null; renderBookTranslation();
   localStorage.setItem('parallel.lastBook', book.id);
@@ -517,7 +527,7 @@ function selectParagraph(pid, retry = false) {
 }
 
 function scheduleWindow(selected = null, retry = false) {
-  if (!state.book || state.readingChoicePending) return;
+  if (!state.book || state.book.sourceOnly || state.readingChoicePending) return;
   const epoch = state.epoch, book = state.book, page = state.page, endPage = windowEnd(), enabled = state.prefetch;
   clearTimeout(state.timer);
   // Serialize mutations so rapid navigation cannot restore an older window.
@@ -531,7 +541,7 @@ function scheduleWindow(selected = null, retry = false) {
   }).catch(error => { if (epoch === state.epoch) { report(error); $('#prefetch-text').textContent = '连接中断，5 秒后重试'; state.timer = setTimeout(() => scheduleWindow(selected, retry), 5000); } });
 }
 async function poll(epoch) {
-  if (epoch !== state.epoch || !state.book || state.readingChoicePending) return;
+  if (epoch !== state.epoch || !state.book || state.book.sourceOnly || state.readingChoicePending) return;
   const revision = bulkRevision;
   try {
     const result = await api(bookUrl('/status?page=' + state.page + '&endPage=' + windowEnd()));
@@ -617,6 +627,8 @@ $('#prefetch-toggle').onclick = () => { state.prefetch = !state.prefetch; localS
 updatePrefetchButton();
 
 function renderBookTranslation() {
+  $('#book-translation').hidden = !!state.book?.sourceOnly;
+  if (state.book?.sourceOnly) return;
   const task = bookTranslation, button = $('#book-translation-action');
   const summary = state.library.find(book => book.id === state.book?.id);
   if (summary && task) {
@@ -726,7 +738,7 @@ async function importBook(file, sample = false) {
   if (!sample && (!file || !file.name.toLowerCase().endsWith('.epub'))) return toast('请选择 .epub 格式的电子书');
   if (file?.size > 100 * 1024 * 1024) return toast('EPUB 超过 100 MB 导入限制');
   importing = true;
-  for (const id of ['import-button', 'library-add', 'sample-button', 'welcome-import']) $('#' + id).disabled = true;
+  for (const id of ['import-button', 'library-archive', 'sample-button', 'welcome-import']) $('#' + id).disabled = true;
   toast('正在整理书籍和章节…');
   try {
     const book = sample ? await api('/api/import-sample', {}) : await api('/api/import', undefined, { method: 'POST', headers: { 'Content-Type': 'application/epub+zip' }, body: file });
@@ -734,18 +746,27 @@ async function importBook(file, sample = false) {
   } catch (error) { report(error); }
   finally {
     importing = false;
-    for (const id of ['import-button', 'library-add', 'sample-button', 'welcome-import']) $('#' + id).disabled = false;
+    for (const id of ['import-button', 'library-archive', 'sample-button', 'welcome-import']) $('#' + id).disabled = false;
     $('#file-input').value = '';
   }
 }
-$('#library-add').onclick = $('#import-button').onclick = $('#welcome-import').onclick = () => $('#file-input').click();
-$('#file-input').onchange = event => importBook(event.target.files[0]);
+async function importFiles(selection) {
+  const files = [...selection]; if (!files.length) return;
+  if (archiveTools.busy || importing) return toast('请等待当前导入或打包完成');
+  if (files.every(file => file.name.toLowerCase().endsWith('.epub'))) {
+    for (const file of files) await importBook(file);
+  } else if (files.every(file => /\.zip(?:\.\d{3,5})?$/i.test(file.name))) archiveTools.open('import', files);
+  else toast('请选择 EPUB，或同一个书架归档的全部 ZIP 分卷');
+  $('#file-input').value = '';
+}
+$('#import-button').onclick = $('#welcome-import').onclick = () => $('#file-input').click();
+$('#file-input').onchange = event => importFiles(event.target.files);
 $('#sample-button').onclick = () => importBook(null, true);
 let dragDepth = 0;
 document.addEventListener('dragenter', event => { if ([...event.dataTransfer.types].includes('Files')) { event.preventDefault(); dragDepth++; $('#drop-overlay').hidden = false; } });
 document.addEventListener('dragover', event => { if ([...event.dataTransfer.types].includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } });
 document.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#drop-overlay').hidden = true; } });
-document.addEventListener('drop', event => { event.preventDefault(); dragDepth = 0; $('#drop-overlay').hidden = true; importBook(event.dataTransfer.files[0]); });
+document.addEventListener('drop', event => { event.preventDefault(); dragDepth = 0; $('#drop-overlay').hidden = true; importFiles(event.dataTransfer.files); });
 
 async function showSettings() {
   try {

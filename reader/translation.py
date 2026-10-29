@@ -645,6 +645,9 @@ class Translator:
 
     def _load_bulk(self, book, fingerprint, settings, saved=None):
         """Rebuild pending work from durable translations; never persist API keys twice."""
+        if book.get('sourceOnly'):
+            saved = {**(saved or {}), 'model': settings['model'], 'state': 'paused', 'reason': '本书已可直接阅读，无需翻译。'}
+            self.store.save_bulk_job(book['id'], fingerprint, saved['model'], saved['state'], saved['reason'])
         completed = self.store.cached_paragraphs(book['id'], fingerprint)
         failures = self.store.bulk_failures(book['id'], fingerprint)
         job = {'book': book, 'profile': fingerprint, 'settings': dict(settings),
@@ -685,6 +688,9 @@ class Translator:
             self._set_bulk_state(job, 'failed', '其余段落已保存，可重试未成功的段落。')
 
     def bulk_status(self, book):
+        if book.get('sourceOnly'):
+            total = len(book['paragraphs'])
+            return {'state': 'completed', 'completed': total, 'total': total, 'drafted': total, 'failed': 0, 'inFlight': 0, 'percent': 100.0, 'sourceOnly': True, 'reviewEnabled': False, 'profile': profile(self.store.settings())}
         settings = self.store.settings()
         fingerprint = profile(settings)
         with self.condition:
@@ -721,6 +727,8 @@ class Translator:
             return result
 
     def bulk_action(self, book, action):
+        if book.get('sourceOnly'):
+            raise ValueError('本书是中文原著或已翻译版本，可直接阅读，无需翻译。')
         if not isinstance(action, str) or action not in {'start', 'pause', 'resume', 'retry'}:
             raise ValueError('不支持的整本翻译操作')
         with self.condition:
@@ -790,6 +798,8 @@ class Translator:
             self.condition.notify_all()
 
     def reproofread(self, book, value):
+        if book.get('sourceOnly'):
+            raise ValueError('本书可直接阅读，无需再次校对。')
         with self.condition:
             self.store.book(book['id'])
             result = self.reproof.request(book, value)
@@ -798,6 +808,8 @@ class Translator:
             return result
 
     def window(self, book, page, selected=None, retry=False, enabled=True, end_page=None):
+        if book.get('sourceOnly'):
+            return profile(self.store.settings())
         end_page = page if end_page is None else end_page
         ids = []
         with self.condition:

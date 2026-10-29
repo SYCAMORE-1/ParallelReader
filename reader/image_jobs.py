@@ -73,7 +73,7 @@ class ImageBookJobs:
             return self.status(book, kind, token)
 
     def assets(self, book):
-        if not images_enabled(self.store.settings()):
+        if book.get('sourceOnly') or not images_enabled(self.store.settings()):
             return []
         return list(dict.fromkeys(item['asset'] for item in book.get('illustrations', [])))
 

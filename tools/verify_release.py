@@ -10,6 +10,8 @@ sys.path.insert(0, str(ROOT))
 
 
 def main():
+    import pyzipper
+    from Cryptodome.Cipher import AES
     from PIL import Image, ImageFont
     from reader.image_render import chinese_font
     import server

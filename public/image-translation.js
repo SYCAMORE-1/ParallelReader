@@ -19,6 +19,7 @@ export class ImageTranslationTools {
     return entry.views;
   }
   attach(host, bookId, asset, { image, originalSrc } = {}) {
+    if (this.state.book?.sourceOnly) return { load() {} };
     const key = `${bookId}:${asset}:${this.state.profile}`;
     let entry = this.entries.get(key);
     if (!entry) {

@@ -148,7 +148,7 @@ def parse_epub(data, filename="book.epub"):
             page_ids, words = [], 0
             for kind, text in blocks:
                 for part_index, part in enumerate(split_long(text)):
-                    size = len(part.split())
+                    size = max(len(part.split()), len(re.findall(r'[\u3400-\u9fff]', part)) // 2)
                     if page_ids and (words + size > 300 or len(page_ids) >= 7) and words > 90:
                         pages.append({"id": len(pages), "chapter": chapter["id"], "paragraphs": page_ids})
                         page_ids, words = [], 0
@@ -173,6 +173,13 @@ def parse_epub(data, filename="book.epub"):
                 pass
         start = next((c["startPage"] for c in chapters if re.search(r"\b(prologue|chapter\s+(one|1)|one)\b|序章|第一章", c["title"], re.I)), 0)
         book = {"id": hashlib.sha256(data).hexdigest()[:24], "title": meta("title", filename.removesuffix(".epub")), "author": meta("creator", "未知作者"), "language": meta("language", "en"), "cover": cover, "chapters": chapters, "paragraphs": paragraphs, "pages": pages, "startPage": start, "warnings": warnings}
+        book['alreadyTranslated'] = any(
+            (tag(node) == 'identifier' and (node.text or '').startswith('urn:parallel:'))
+            or any(key.rsplit('}', 1)[-1] == 'role' and value in {'trl', 'translator'} for key, value in node.attrib.items())
+            or (tag(node) == 'meta' and node.attrib.get('property') == 'role' and (node.text or '').strip() == 'trl')
+            for node in (metadata or []))
+        from reader.reading_policy import prepare_book
+        book = prepare_book(book)
         from reader.illustrations import enhance
         return enhance(book, archive, manifest, spine, metadata)
 

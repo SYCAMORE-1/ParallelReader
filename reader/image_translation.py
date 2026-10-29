@@ -153,8 +153,13 @@ class ImageTranslator:
     def key(self, book, asset, settings, version=VERSION):
         if asset not in book.get('images', {}):
             raise KeyError('插图不存在')
-        material = [book['id'], asset, image_profile(settings, version)]
-        return 'image-translation:' + hashlib.sha256(json.dumps(material).encode()).hexdigest()
+        identity = book.get('cacheIdentity', book['id'])
+        material = [identity, asset, image_profile(settings, version)]
+        key = 'image-translation:' + hashlib.sha256(json.dumps(material).encode()).hexdigest()
+        if identity != book['id']:
+            from reader.book_folders import image_cache_alias
+            return image_cache_alias(book['id'], key)
+        return key
 
     def ready_result(self, book, asset, settings=None):
         if not images_enabled(settings or self.store.settings()):
@@ -197,6 +202,8 @@ class ImageTranslator:
             return self._status(self.key(book, asset, self.store.settings()))
 
     def request(self, book, asset, retry=False, review_only=False):
+        if book.get('sourceOnly'):
+            return {'state': 'disabled', 'result': None, 'cached': False, 'error': '', 'reason': '原书已是中文或译本，直接阅读原图'}
         if not images_enabled(self.store.settings()):
             self.store.book(book['id'])
             return self.status(book, asset)

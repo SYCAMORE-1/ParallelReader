@@ -20,6 +20,7 @@ from reader.image_translation import ImageTranslator
 from reader.translation import Translator, draft_settings, profile, request_json
 from reader.providers import review_enabled
 from reader.shelf_archive import ArchiveJobs
+from reader.covers import CoverThumbnails
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_SAMPLE = ROOT / '.data' / 'sample.epub'
@@ -85,6 +86,7 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
             raise ValueError('预览地址必须是电脑的实际 IPv4 地址')
         allowed_addresses.add(str(parsed_address))
     store = Store(data_dir or ROOT / ".data")
+    covers = CoverThumbnails(store)
     image_translator = ImageTranslator(store, read_fn=image_fn, render_fn=image_render_fn)
     store.image_service = image_translator
     store.image_progress = image_translator.book_jobs.library
@@ -167,6 +169,8 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                 if parsed.path == "/api/health":
                     return self.respond({"ok": True, "version": "0.1.0"})
                 if parsed.path == "/api/books":
+                    if parse_qs(parsed.query).get('summary') == ['1']:
+                        return self.respond(store.library())
                     settings = store.settings()
                     return self.respond(store.library(profile(settings), profile(draft_settings(settings)) if review_enabled(settings) else None))
                 if parsed.path == '/api/library-progress':
@@ -212,6 +216,20 @@ def make_server(host="127.0.0.1", port=8765, data_dir=None, sample=DEFAULT_SAMPL
                     self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
                     self.end_headers()
                     self.wfile.write(data)
+                    return
+                if parts[:2] == ['api', 'books'] and len(parts) == 4 and parts[3] == 'cover':
+                    data, etag = covers.get(parts[2])
+                    not_modified = self.headers.get('If-None-Match') == etag
+                    self.send_response(304 if not_modified else 200)
+                    self.send_header('Content-Type', 'image/jpeg')
+                    if not not_modified:
+                        self.send_header('Content-Length', str(len(data)))
+                    self.send_header('Cache-Control', 'private, max-age=86400')
+                    self.send_header('ETag', etag)
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.end_headers()
+                    if not not_modified:
+                        self.wfile.write(data)
                     return
                 if parts[:2] == ["api", "books"] and len(parts) in (3, 4):
                     book = store.book(parts[2])

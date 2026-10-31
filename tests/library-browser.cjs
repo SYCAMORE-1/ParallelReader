@@ -18,7 +18,7 @@ const { chromium } = require(path.join(process.env.PARALLEL_NODE_MODULES, 'playw
     await context.route('**/api/**', async route => {
       const request = route.request(), endpoint = new URL(request.url()).pathname;
       if (endpoint.endsWith('/translation-sources')) return route.fulfill({contentType:'application/json',body:JSON.stringify({configurationProfile:profile,selectedProfile:profile,selectionRequired:false,sources:[]})});
-      if (endpoint.includes('/images/') && request.method() === 'GET') return route.continue();
+      if ((endpoint.includes('/images/') || endpoint.endsWith('/cover')) && request.method() === 'GET') return route.continue();
       const id = endpoint.split('/')[3], summary = books.find(book => book.id === id);
       let value, status = 200;
       if (endpoint === '/api/settings') value = { model: 'QA', profile, targetLanguage: '简体中文' };

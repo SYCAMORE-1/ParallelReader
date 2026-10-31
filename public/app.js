@@ -836,8 +836,9 @@ $('#sidebar-toggle').onclick = () => { if (window.innerWidth <= 720) document.bo
 document.addEventListener('click', event => { if (window.innerWidth <= 720 && !event.target.closest('#sidebar') && !event.target.closest('#sidebar-toggle') && !event.target.closest('#library-menu')) document.body.classList.remove('mobile-sidebar'); });
 window.addEventListener('online', () => { if (state.book) scheduleWindow(); });
 try {
-  const [settings, books, sample] = await Promise.all([api('/api/settings'), api('/api/books'), api('/api/sample')]);
+  const [settings, books, sample] = await Promise.all([api('/api/settings'), api('/api/books?summary=1'), api('/api/sample')]);
   state.settings = settings; state.profile = settings.profile; state.library = books; applySettings(); renderLibrary();
+  refreshLibraryProgress();
   $('#sample-button').hidden = !sample.available;
   const last = localStorage.getItem('parallel.lastBook');
   if (books.length) await openBook(books.some(b => b.id === last) ? last : books[0].id);

@@ -217,11 +217,18 @@ class Store:
 
     def library(self, fingerprint=None, draft_profile=None):
         with self.lock:
-            rows = self.db.execute("SELECT data,page,updated FROM books WHERE NOT EXISTS (SELECT 1 FROM removed_books WHERE book=books.id) ORDER BY updated DESC").fetchall()
+            # Project only shelf metadata in SQLite: do not transfer/parse every
+            # book's paragraphs and embedded full-resolution cover in Python.
+            rows = self.db.execute("""SELECT id,json_extract(data,'$.title'),json_extract(data,'$.author'),
+                coalesce(length(json_extract(data,'$.cover')),0)>0,json_array_length(data,'$.pages'),
+                page,updated,json_extract(data,'$.sourceOnly') FROM books
+                WHERE NOT EXISTS (SELECT 1 FROM removed_books WHERE book=books.id) ORDER BY updated DESC""").fetchall()
             marks = {row[0]: {'page': row[1], 'manual': bool(row[2]), 'updated': row[3]} for row in self.db.execute('SELECT book,page,manual,updated FROM bookmarks')}
         statistics = self.library_progress(fingerprint, draft_profile) if fingerprint else {}
-        return [{k: b[k] for k in ("id", "title", "author", "cover")} | {"pageCount": len(b["pages"]), "currentPage": page, "updated": updated, 'bookmark': marks.get(b['id']), 'sourceOnly': bool(b.get('sourceOnly'))}
-                | ({'translationProgress': statistics.get(b['id'])} if fingerprint else {}) for raw, page, updated in rows for b in [json.loads(raw)] if self.folders.available(b['id'])]
+        return [{'id': bid, 'title': title, 'author': author, 'cover': f'/api/books/{bid}/cover' if has_cover else None,
+                 'pageCount': count, 'currentPage': page, 'updated': updated, 'bookmark': marks.get(bid), 'sourceOnly': bool(source_only)}
+                | ({'translationProgress': statistics.get(bid)} if fingerprint else {})
+                for bid, title, author, has_cover, count, page, updated, source_only in rows if self.folders.available(bid)]
 
     def progress(self, book_id, page, layout_version=None):
         book = self.book(book_id)
